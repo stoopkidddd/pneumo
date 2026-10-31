@@ -195,7 +195,7 @@ async function main(): Promise<void> {
       console.log(`PASS ${mode} smoke and SIGTERM shutdown`);
     }
     console.log(`PASS both upload modes; retained image ${image}`);
-    assert(size > 0 && size <= 250_000_000, `Image exceeds 250 MB: ${size} bytes`);
+    assert(size > 0 && size <= 300_000_000, `Image exceeds 300 MB: ${size} bytes`);
     console.log("PASS image size limit");
   } finally {
     let failed = false;

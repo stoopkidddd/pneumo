@@ -542,7 +542,7 @@ Pair, Confirm, Onboarding, Home (history and composer), Devices (list, rename, r
   1. pnpm install.
   2. Build the packages, the web app and the server.
   3. Runtime on `node:26-slim` as the non-root user `pneumo`, with only the server dist, the web dist and production dependencies.
-* Image size at most 250 MB. `EXPOSE 8080`. `CMD ["node", "apps/server/dist/index.js"]`.
+* Image size at most 300 MB uncompressed ([ADR 0002](adr/0002-image-size-cap.md)). `EXPOSE 8080`. `CMD ["node", "apps/server/dist/index.js"]`.
 
 ### 16.2 Local development
 
