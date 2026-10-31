@@ -1,5 +1,8 @@
 when:
-  - event: [push, pull_request]
+  # Probe (ENG-277): pull_request without a paths filter, to learn whether PR paths filters match.
+  - event: pull_request
+    branch: main
+  - event: push
     branch: main
     paths:
       - "packages/**"
