@@ -2,9 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
-import type { Browser, BrowserContext, Page, Route } from "@playwright/test";
+import type { Browser, BrowserContext, Page, Route, WebSocketRoute } from "@playwright/test";
 import { b64uEncode, deriveKeys, deriveMasterKey, encryptPush } from "@pneumo/crypto";
-import { AuthParamsResponse, uuidv7 } from "@pneumo/protocol";
+import { AuthParamsResponse, ClientFrame, ServerFrame, uuidv7 } from "@pneumo/protocol";
 import { expect, login, PASSPHRASE, test } from "./fixtures.js";
 
 const screenshotDirectory = fileURLToPath(new URL("../test-results/screens", import.meta.url));
@@ -134,14 +134,21 @@ async function seedPushes(
 
 async function assertAccessibleAndCapture(
   page: Page,
-  name: "home-empty" | "home-items" | "home-offline" | "home-error",
+  name:
+    | "home-empty"
+    | "home-items"
+    | "home-offline"
+    | "home-error"
+    | "home-send-success-focus"
+    | "home-send-error-focus",
+  { keepFocus = false }: { keepFocus?: boolean } = {},
 ): Promise<void> {
   await mkdir(screenshotDirectory, { recursive: true });
-  await page.evaluate(async () => {
+  await page.evaluate(async (keepFocus) => {
     await document.fonts.ready;
-    document.getElementById("main")?.focus({ preventScroll: true });
+    if (!keepFocus) document.getElementById("main")?.focus({ preventScroll: true });
     window.scrollTo(0, 0);
-  });
+  }, keepFocus);
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
     const scan = await new AxeBuilder({ page }).analyze();
@@ -164,7 +171,7 @@ async function assertAccessibleAndCapture(
   await page.emulateMedia({ colorScheme: null });
 }
 
-test("two browsers receive, target, copy, open, delete, and replay pushes", async ({
+test("two browsers receive, target, copy, open, and delete pushes", async ({
   browser,
   instance,
   signedIn,
@@ -194,6 +201,12 @@ test("two browsers receive, target, copy, open, delete, and replay pushes", asyn
     await expect(secondNote).toContainText("First line");
     await expect(ownerNote).toContainText("Owner browser");
     await expect(secondNote).toContainText("Owner browser");
+    await expect(message).toBeFocused();
+    await assertAccessibleAndCapture(owner, "home-send-success-focus", { keepFocus: true });
+    await expect(message).toBeFocused();
+    await owner.keyboard.type("Ready for the next push");
+    await expect(message).toHaveValue("Ready for the next push");
+    await message.clear();
     await secondNote.getByRole("button", { name: "Copy", exact: true }).click();
     await expect
       .poll(() => second.page.evaluate(() => navigator.clipboard.readText()))
@@ -204,6 +217,8 @@ test("two browsers receive, target, copy, open, delete, and replay pushes", asyn
     const linkId = await sendWithButton(owner, linkUrl);
     const secondLink = push(second.page, linkId);
     await expect(secondLink).toBeVisible({ timeout: 2_000 });
+    await expect(push(owner, linkId)).toBeVisible();
+    await expect(push(owner, linkId)).toContainText(linkUrl);
     const open = secondLink.getByRole("link", { name: "Open", exact: true });
     await expect(open).toHaveAttribute("href", linkUrl);
     await expect(open).toHaveAttribute("target", "_blank");
@@ -223,18 +238,7 @@ test("two browsers receive, target, copy, open, delete, and replay pushes", asyn
     await secondNote.getByRole("button", { name: "Confirm delete" }).click();
     await expect(secondNote).toHaveCount(0);
     await expect(ownerNote).toHaveCount(0, { timeout: 2_000 });
-
-    await second.context.setOffline(true);
-    await expect(second.page.locator(".offline-banner")).toBeVisible();
-    await targetDevice(owner, secondDeviceName);
-    const replayBody = "Delivered after reconnect";
-    const replayId = await sendWithButton(owner, replayBody);
-    await expect(push(second.page, replayId)).toHaveCount(0);
-    await second.context.setOffline(false);
-    await waitForLive(second.page);
-    await expect(push(second.page, replayId)).toContainText(replayBody);
   } finally {
-    await second.context.setOffline(false);
     await second.context.close();
   }
 });
@@ -260,9 +264,11 @@ test("composer retains failed drafts, retries, and enforces the encrypted limit"
   };
   await page.route("**/api/pushes", failFirstCreate);
   await page.getByLabel("Message", { exact: true }).fill(draft);
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByRole("alert")).toContainText(/temporary|try again|could not send|failed/i);
   await expect(page.getByLabel("Message", { exact: true })).toHaveValue(draft);
+  await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
+  await assertAccessibleAndCapture(page, "home-send-error-focus", { keepFocus: true });
   await expect(page.locator("article").filter({ hasText: draft })).toHaveCount(0);
   await page.unroute("**/api/pushes", failFirstCreate);
   const id = await sendWithButton(page, draft);
@@ -430,5 +436,94 @@ test("a pending send is visible immediately and reconciles to one confirmed row"
   } finally {
     held.resolve();
     await page.unroute("**/api/pushes");
+  }
+});
+
+test("a disconnected browser receives missed pushes through WebSocket replay", async ({
+  browser,
+  instance,
+  signedIn,
+}) => {
+  const context = await browser.newContext();
+  const connections: {
+    client: WebSocketRoute;
+    server: WebSocketRoute;
+    since: string | null | undefined;
+    frames: { type: string; id: string | null }[];
+  }[] = [];
+  let offline = false;
+  let offlineConnectionAttempts = 0;
+  await context.routeWebSocket("**/api/ws", async (client) => {
+    if (offline) {
+      offlineConnectionAttempts += 1;
+      await client.close({ code: 1012, reason: "Offline test connection" });
+      return;
+    }
+    const server = client.connectToServer();
+    const connection = {
+      client,
+      server,
+      since: undefined as string | null | undefined,
+      frames: [] as { type: string; id: string | null }[],
+    };
+    connections.push(connection);
+    client.onMessage((message) => {
+      const frame = ClientFrame.parse(JSON.parse(message.toString()));
+      if (frame.type === "hello") connection.since = frame.since;
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const frame = ServerFrame.parse(JSON.parse(message.toString()));
+      connection.frames.push({
+        type: frame.type,
+        id: frame.type === "push" ? frame.push.id : null,
+      });
+      client.send(message);
+    });
+  });
+  const page = await context.newPage();
+  try {
+    await login(page, instance.origin, { deviceName: secondDeviceName });
+    await Promise.all([waitForLive(signedIn.page), waitForLive(page)]);
+    const cursorId = await sendWithButton(signedIn.page, "Known before disconnect");
+    await expect(push(page, cursorId)).toBeVisible({ timeout: 2_000 });
+    const original = connections.at(-1);
+    if (!original) throw new Error("Second browser has no proxied connection");
+
+    offline = true;
+    await context.setOffline(true);
+    await Promise.all([
+      original.client.close({ code: 1001, reason: "Network disconnected" }),
+      original.server.close({ code: 1001, reason: "Network disconnected" }),
+    ]);
+    await expect.poll(() => offlineConnectionAttempts).toBeGreaterThan(0);
+    await expect(page.locator(".offline-banner")).toBeVisible();
+    const replayBody = "Delivered through replay after reconnect";
+    const replayId = await sendWithButton(signedIn.page, replayBody);
+    await expect(push(page, replayId)).toHaveCount(0);
+
+    const connectionCount = connections.length;
+    offline = false;
+    await context.setOffline(false);
+    await expect.poll(() => connections.length).toBeGreaterThan(connectionCount);
+    const reconnected = connections.at(-1);
+    if (!reconnected) throw new Error("Second browser did not reconnect");
+    expect(reconnected).not.toBe(original);
+    await expect.poll(() => reconnected.since).toBe(cursorId);
+    await expect
+      .poll(() =>
+        reconnected.frames.filter(
+          (frame) =>
+            frame.type === "ready" || frame.type === "push" || frame.type === "replay_done",
+        ),
+      )
+      .toEqual([
+        { type: "ready", id: null },
+        { type: "push", id: replayId },
+        { type: "replay_done", id: null },
+      ]);
+    await expect(push(page, replayId)).toContainText(replayBody);
+  } finally {
+    await context.close();
   }
 });

@@ -109,6 +109,7 @@ test("Enter sends while Shift+Enter and IME composition do not", async () => {
 
   await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
   expect(onSend).toHaveBeenCalledWith({ type: "note", body: "First line\nSecond line" }, null);
+  await waitFor(() => expect(document.activeElement).toBe(message));
 });
 
 test("enforces the exact encrypted envelope boundary before sending", () => {
@@ -159,6 +160,7 @@ test("disables all inputs while sending and retains the draft after an error", a
   expect(message.value).toBe("Do not lose this draft");
   expect(message.disabled).toBe(false);
   expect(send.disabled).toBe(false);
+  expect(document.activeElement).toBe(message);
 });
 
 test("keeps a draft visible but disables the composer while offline", () => {

@@ -54,6 +54,10 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, offline }: Compose
   }, [message]);
 
   useEffect(() => {
+    if (sendState === "success" || sendState === "error") textareaRef.current?.focus();
+  }, [sendState]);
+
+  useEffect(() => {
     if (targetDeviceId.length > 0 && !devices.some((device) => device.id === targetDeviceId)) {
       setTargetDeviceId("");
     }
