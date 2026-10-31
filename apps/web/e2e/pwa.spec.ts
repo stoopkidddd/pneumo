@@ -73,6 +73,7 @@ type WebManifest = {
 
 type NotificationCaptureName =
   | "home-notification-prompt"
+  | "settings-offline"
   | "settings-notifications-off"
   | "settings-notifications-on"
   | "settings-notifications-denied"
@@ -591,7 +592,7 @@ test("signing out also removes this browser’s notification subscription", asyn
   ).toBe(true);
 });
 
-test("the installed worker keeps the signed-in Home shell available after an offline reload", async ({
+test("the installed worker keeps Home and Settings available after an offline reload", async ({
   signedIn,
 }) => {
   const { context, page } = signedIn;
@@ -603,6 +604,12 @@ test("the installed worker keeps the signed-in Home shell available after an off
     await page.reload();
     await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
     await expect(page.locator(".offline-banner")).toBeVisible();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+    await expect(page.getByRole("status")).toHaveText(
+      "Offline. Reconnect to load this browser’s settings.",
+    );
+    await captureAccessibleSettings(page, "settings-offline");
   } finally {
     await context.setOffline(false);
   }
