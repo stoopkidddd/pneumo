@@ -61,8 +61,7 @@ git push -o verbose-ci origin <branch>
 ```
 
 Validation problems print even without `verbose-ci`.
-
-TBD: confirmed by the lead after round 2.
+With no files in `.tangled/workflows/`, the push prints `remote: no pipelines to compile`.
 
 Skip pipelines for one push:
 
@@ -110,13 +109,28 @@ The panel does not refresh after sending. Reloading and counting the heading pre
 
 ### Resubmit a new round
 
-TBD: confirmed by the lead after round 2.
+1. Commit the fixes on the same branch and push: `git push origin <branch>`.
+2. Open `https://tangled.org/demi.dev/pneumo/pulls/<N>`.
+3. Click **Resubmit** in the **Commits** header, next to the round selector (`v0`, `v1`, …).
+
+There is no dialog. Within a few seconds the round selector moves to the next round, and the PR shows the new commits and diff.
+**Resubmit** only appears while the branch has commits the PR doesn't have yet.
+Comments are grouped by round in the **Comments** panel.
+Pipelines run again for the new round, if the branch has workflow files.
 
 ### Merge
 
-The **Rebase & merge** button is at the bottom right of the PR page and has a dropdown.
+1. Click **Rebase & merge**, at the bottom right of the PR page.
+2. Then update the local checkout and remove the branch:
 
-TBD: confirmed by the lead after round 2.
+```sh
+git pull --ff-only origin main
+git push origin --delete <branch>
+git worktree remove .claude/worktrees/<eng-id>
+git branch -D <branch>
+```
+
+The button's dropdown offers **Rebase** and **Manually mark as merged**. Never use **Manually mark as merged**: it closes the PR without applying the patch.
 
 ## Reading pipeline (CI) status for a PR
 
