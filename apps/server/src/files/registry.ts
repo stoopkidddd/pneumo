@@ -2,6 +2,7 @@ export interface PendingFile {
   size: number;
   createdAt: number;
   attached: boolean;
+  uploading?: boolean;
 }
 
 /** Tracks file ids issued by this process until their object or push is removed. */

@@ -87,8 +87,10 @@ Authenticated clients reserve encrypted uploads with `POST /api/files`, upload u
 returned PUT descriptor, and attach the issued file id in `POST /api/pushes`. Direct PUT
 URLs expire after one hour; download URLs expire after ten minutes. Proxy transfers stream
 through authenticated `/api/files/:id/content` routes and reject any body whose byte count
-differs from its reservation. Upload reservations are memory-only: after a server restart,
-an unattached upload must be reserved and uploaded again.
+differs from its reservation. A slow proxy upload does not block other pushes or uploads.
+A concurrent PUT for the same file returns 409; attaching an actively uploading file
+returns 400. Upload reservations are memory-only: after a server restart, an unattached
+upload must be reserved and uploaded again.
 
 Push creation is idempotent: an identical body for an existing id returns its stored record;
 a different body returns 409. History is newest first by `(createdAt, id)`, with UUID

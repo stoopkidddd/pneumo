@@ -51,7 +51,7 @@ export function createPushRoutes(deps: AppDependencies): Hono<AppEnv> {
         if (pending?.attached || deps.pushes.hasFile(request.file.id)) {
           return errorResponse(c, "conflict");
         }
-        if (pending === undefined) return errorResponse(c, "bad_request");
+        if (pending === undefined || pending.uploading) return errorResponse(c, "bad_request");
         const object = await deps.storage.head(`files/${request.file.id}`);
         if (object === null || object.size !== pending.size) return errorResponse(c, "bad_request");
         file = { id: request.file.id, size: pending.size };

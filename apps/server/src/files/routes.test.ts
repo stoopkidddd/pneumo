@@ -309,6 +309,71 @@ describe("proxy transfers", () => {
     expect(storage.chunks).toEqual([3, 3, 3]);
   });
 
+  test("a stalled upload allows independent pushes and uploads but cannot be attached or overwritten", async () => {
+    const target = await fixture();
+    const created = await reserve(target, 10);
+    // A previous upload must not be attached while its replacement is still streaming.
+    await target.storage.putStream(
+      `files/${created.fileId}`,
+      Readable.from([Buffer.alloc(10)]),
+      10,
+    );
+    const createPush = (fileId: string | null) =>
+      target.app.request(
+        "/api/pushes",
+        jsonRequest(target.owner.token, {
+          id: uuidv7(),
+          targetDeviceId: null,
+          envelope: {
+            v: 1,
+            n: Buffer.alloc(12).toString("base64url"),
+            c: Buffer.alloc(16).toString("base64url"),
+          },
+          file: fileId === null ? null : { id: fileId },
+        }),
+      );
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+    const upload = target.app.request(
+      new Request(`http://localhost/api/files/${created.fileId}/content`, {
+        method: "PUT",
+        headers: authorization(target.owner.token),
+        body: readable,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+    );
+    try {
+      await writer.write(Buffer.from("abc"));
+      const [push, duplicate, attachment, parallel] = await Promise.all([
+        createPush(null),
+        target.app.request(
+          streamingPut(`/api/files/${created.fileId}/content`, target.owner.token, [
+            Buffer.alloc(10),
+          ]),
+        ),
+        createPush(created.fileId),
+        (async () => {
+          const other = await reserve(target, 3);
+          return target.app.request(
+            streamingPut(`/api/files/${other.fileId}/content`, target.owner.token, [
+              Buffer.from("def"),
+            ]),
+          );
+        })(),
+      ]);
+      expect(push.status).toBe(201);
+      await expectError(duplicate, 409, "conflict");
+      await expectError(attachment, 400, "bad_request");
+      expect(parallel.status).toBe(204);
+    } finally {
+      await writer.write(Buffer.alloc(7));
+      await writer.close();
+      await upload;
+    }
+    expect((await upload).status).toBe(204);
+    expect((await createPush(created.fileId)).status).toBe(201);
+  });
+
   test("rejects short and long streams without storing an object", async () => {
     const target = await fixture();
     const short = await reserve(target, 4);
@@ -322,6 +387,15 @@ describe("proxy transfers", () => {
       "bad_request",
     );
     expect(await target.storage.head(`files/${short.fileId}`)).toBeNull();
+    expect(
+      (
+        await target.app.request(
+          streamingPut(`/api/files/${short.fileId}/content`, target.owner.token, [
+            Buffer.from("done"),
+          ]),
+        )
+      ).status,
+    ).toBe(204);
 
     const long = await reserve(target, 4);
     await expectError(

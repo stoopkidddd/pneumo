@@ -120,12 +120,14 @@ export function createFileRoutes(deps: AppDependencies): Hono<AppEnv> {
     const id = c.req.param("id");
     if (!isUuidv7(id)) return errorResponse(c, "not_found");
 
-    return deps.pushes.mutex.run(async () => {
+    const pending = await deps.pushes.mutex.run(async () => {
       const pending = deps.files.pending.get(id);
       if (!pending) {
         return errorResponse(c, deps.pushes.hasFile(id) ? "conflict" : "not_found");
       }
-      if (pending.attached || deps.pushes.hasFile(id)) return errorResponse(c, "conflict");
+      if (pending.attached || pending.uploading || deps.pushes.hasFile(id)) {
+        return errorResponse(c, "conflict");
+      }
 
       const contentLength = parseContentLength(c.req.header("Content-Length"));
       if (contentLength !== null && contentLength > deps.config.MAX_FILE_BYTES) {
@@ -134,28 +136,35 @@ export function createFileRoutes(deps: AppDependencies): Hono<AppEnv> {
       if (contentLength !== null && contentLength !== pending.size) {
         return errorResponse(c, "bad_request");
       }
-
-      const { stream, validation } = validatedUpload(
-        c.req.raw,
-        pending.size,
-        deps.config.MAX_FILE_BYTES,
-      );
-      const completed = finished(stream, { cleanup: true });
-      void completed.catch(() => {});
-      try {
-        await deps.storage.putStream(objectKey(id), stream, pending.size);
-        // Some object stores resolve after Content-Length bytes without reading EOF.
-        // Drain anything they left behind and do not acknowledge until the request ended.
-        stream.resume();
-        await completed;
-      } catch (error) {
-        stream.destroy();
-        await deps.storage.delete(objectKey(id));
-        if (validation.code !== null) return errorResponse(c, validation.code);
-        throw error;
-      }
-      return c.body(null, 204);
+      pending.uploading = true;
+      return pending;
     });
+    if (pending instanceof Response) return pending;
+
+    const { stream, validation } = validatedUpload(
+      c.req.raw,
+      pending.size,
+      deps.config.MAX_FILE_BYTES,
+    );
+    const completed = finished(stream, { cleanup: true });
+    void completed.catch(() => {});
+    try {
+      await deps.storage.putStream(objectKey(id), stream, pending.size);
+      // Some object stores resolve after Content-Length bytes without reading EOF.
+      // Drain anything they left behind and do not acknowledge until the request ended.
+      stream.resume();
+      await completed;
+    } catch (error) {
+      stream.destroy();
+      await deps.storage.delete(objectKey(id));
+      if (validation.code !== null) return errorResponse(c, validation.code);
+      throw error;
+    } finally {
+      await deps.pushes.mutex.run(async () => {
+        pending.uploading = false;
+      });
+    }
+    return c.body(null, 204);
   });
 
   routes.get("/files/:id", authenticate, async (c) => {
