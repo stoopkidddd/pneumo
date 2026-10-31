@@ -92,7 +92,7 @@ The page shows commits, each commit's pipeline status, the diff (**Unified** or 
 git diff origin/main...<branch>
 ```
 
-The PR contains exactly the branch's commits.
+The PR matches the branch as of the latest **Resubmit**, not necessarily the current branch head.
 
 ### Comment
 
@@ -120,6 +120,7 @@ Pipelines run again for the new round, if the branch has workflow files.
 
 ### Merge
 
+0. Confirm the PR shows no **Resubmit** button and the newest round's head matches `git rev-parse --short <branch>`. If either check fails, resubmit a new round. Repeat both checks before merging.
 1. Click **Rebase & merge**, at the bottom right of the PR page.
 2. Then update the local checkout and remove the branch:
 
