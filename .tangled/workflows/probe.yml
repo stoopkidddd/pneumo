@@ -1,0 +1,20 @@
+# Temporary CI probe (ENG-276): does the hosted spindle run nixery, and does the
+# 5-minute default timeout apply? Deleted in this PR's final round.
+when:
+  - event: ["push"]
+    branch: ["main"]
+  - event: ["pull_request"]
+    branch: ["main"]
+
+engine: "nixery"
+
+dependencies:
+  nixpkgs:
+    - nodejs
+    - coreutils
+
+steps:
+  - name: "Node version"
+    command: "node --version"
+  - name: "Sleep past five minutes"
+    command: "sleep 330"

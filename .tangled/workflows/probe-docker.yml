@@ -1,0 +1,17 @@
+# Temporary CI probe (ENG-276): does the hosted spindle offer microvm with Docker?
+# Deleted in this PR's final round.
+when:
+  - event: ["push"]
+    branch: ["main"]
+  - event: ["pull_request"]
+    branch: ["main"]
+
+engine: "microvm"
+image: nixos
+
+virtualisation:
+  docker: true
+
+steps:
+  - name: "Docker hello-world"
+    command: "docker run --rm hello-world"
