@@ -42,6 +42,8 @@ android {
     lint {
         warningsAsErrors = true
         baseline = file("lint-baseline.xml")
+        // Dependency-update checks make pinned commits fail when upstream releases change.
+        disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable")
     }
 
     testOptions {

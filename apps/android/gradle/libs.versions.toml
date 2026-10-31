@@ -6,8 +6,8 @@ activity = "1.13.0"
 lifecycle = "2.11.0"
 spotless = "8.10.4"
 ktlint = "1.8.0"
-detekt = "2.0.0-alpha.6"
-composeRules = "0.6.8"
+detekt = "1.23.8"
+composeRules = "0.4.23"
 junit = "4.13.2"
 robolectric = "4.17"
 roborazzi = "1.77.0"
@@ -40,5 +40,5 @@ compose-rules = { module = "io.nlopez.compose.rules:detekt", version.ref = "comp
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
-detekt = { id = "dev.detekt", version.ref = "detekt" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }

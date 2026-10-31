@@ -28,7 +28,7 @@ detekt {
     source.setFrom("app/src/main/java", "app/src/test/java", "app/src/androidTest/java")
     config.setFrom("config/detekt/detekt.yml")
     buildUponDefaultConfig = true
-    basePath.set(layout.projectDirectory)
+    basePath = rootDir.absolutePath
 }
 
 dependencies {

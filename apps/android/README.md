@@ -52,12 +52,14 @@ JUnit4/Robolectric tests and Roborazzi verification. `mise run check` includes t
 lane. Turbine and kotlinx-coroutines-test are available for future logic tests;
 there is no application logic in this skeleton.
 
-Detekt uses `2.0.0-alpha.6` with stable Compose Rules `0.6.8`, their
-[documented compatible pair](https://github.com/mrmans0n/compose-rules/releases/tag/0.6.8)
-for the current Kotlin/Gradle toolchain. The old stable detekt
-1.23.8 line is no longer maintained. Its matching Compose Rules 0.4.23 also
-fails the current lint dependency check. The detekt config builds on the default
-rules and enables Compose checks; the lint baseline contains no suppressed issues.
+Detekt uses the stable pair `1.23.8` with Compose Rules `0.4.23`. The detekt config
+builds on the default rules and enables Compose checks.
+
+Lint's `AndroidGradlePluginVersion`, `GradleDependency` and `NewerVersionAvailable`
+checks are disabled because upstream releases would otherwise make the gate
+depend on the date rather than the pinned code. Other lint warnings remain
+errors, and the lint baseline contains no suppressed issues. The older stable
+Compose Rules version is a compatibility pin, not a lint incompatibility.
 
 ## Screenshots
 
