@@ -11,6 +11,12 @@ importers:
       '@biomejs/biome':
         specifier: 2.6.4
         version: 2.6.4
+      '@pneumo/crypto':
+        specifier: workspace:*
+        version: link:packages/crypto
+      '@pneumo/protocol':
+        specifier: workspace:*
+        version: link:packages/protocol
       '@resvg/resvg-js':
         specifier: 2.6.2
         version: 2.6.2

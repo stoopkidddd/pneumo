@@ -7,10 +7,13 @@
     "node": ">=26"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev-client": "tsx scripts/pneumo-dev.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
+    "@pneumo/crypto": "workspace:*",
+    "@pneumo/protocol": "workspace:*",
     "@resvg/resvg-js": "2.6.2",
     "@types/node": "26.6.6",
     "ajv": "8.17.1",
