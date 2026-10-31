@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { HealthResponse } from "@pneumo/protocol";
@@ -21,12 +22,11 @@ async function docker(args: string[], env = process.env): Promise<string> {
   }
 }
 
-async function build(tag: string, target: string): Promise<void> {
-  const child = spawn(
-    "docker",
-    ["build", "--build-arg", `VERSION=${version}`, "--target", target, "--tag", tag, "."],
-    { stdio: "inherit" },
-  );
+async function build(tag: string, target: string, buildVersion?: string): Promise<void> {
+  const versionArgs = buildVersion === undefined ? [] : ["--build-arg", `VERSION=${buildVersion}`];
+  const child = spawn("docker", ["build", ...versionArgs, "--target", target, "--tag", tag, "."], {
+    stdio: "inherit",
+  });
   const [code] = await once(child, "exit");
   assert.equal(code, 0, `Docker ${target} build failed`);
 }
@@ -65,12 +65,13 @@ async function healthy(origin: string): Promise<{ version: string; initialized: 
 async function main(): Promise<void> {
   const run = randomBytes(12).toString("hex");
   const buildImage = `pneumo-docker-build:${run}`;
+  const defaultImage = `pneumo-docker-default:${run}`;
   const network = `pneumo-docker-${run}`;
   const cleanup: (() => Promise<unknown>)[] = [];
   try {
     cleanup.push(() => remove("image", buildImage));
-    await build(buildImage, "build");
-    await build(image, "runtime");
+    await build(buildImage, "build", version);
+    await build(image, "runtime", version);
     const imageId = await docker(["image", "inspect", "--format", "{{.Id}}", image]);
     assert.match(imageId, /^sha256:[a-f0-9]{64}$/u);
     const size = Number(await docker(["image", "inspect", "--format", "{{.Size}}", imageId]));
@@ -85,6 +86,22 @@ async function main(): Promise<void> {
     console.log(`Image size ${size} bytes (${(size / 1_000_000).toFixed(2)} MB)`);
     console.log(`PASS image version label ${version}`);
 
+    cleanup.push(() => remove("image", defaultImage));
+    await build(defaultImage, "runtime");
+    const { version: packageVersion } = HealthResponse.pick({ version: true }).parse(
+      JSON.parse(
+        await readFile(new URL("../../apps/server/package.json", import.meta.url), "utf8"),
+      ),
+    );
+    const defaultLabel = await docker([
+      "image",
+      "inspect",
+      "--format",
+      '{{index .Config.Labels "org.opencontainers.image.version"}}',
+      defaultImage,
+    ]);
+    assert.equal(defaultLabel, "", "Default build must not claim an explicit version override");
+
     await docker(["network", "create", network]);
     cleanup.push(() => docker(["network", "rm", network]));
     const minio = await startMinio();
@@ -97,6 +114,8 @@ async function main(): Promise<void> {
     await docker(["network", "connect", "--alias", "minio", network, minio.name]);
 
     for (const mode of ["direct", "proxy"] as const) {
+      const runtimeImage = mode === "direct" ? imageId : defaultImage;
+      const expectedVersion = mode === "direct" ? version : packageVersion;
       const server = `pneumo-docker-${run}-${mode}`;
       const client = `${server}-smoke`;
       const env = {
@@ -133,7 +152,7 @@ async function main(): Promise<void> {
             "PNEUMO_SETUP_TOKEN",
             "LOG_LEVEL",
           ].flatMap((key) => ["--env", key]),
-          imageId,
+          runtimeImage,
         ],
         env,
       );
@@ -145,7 +164,12 @@ async function main(): Promise<void> {
       ]);
       const origin = `http://127.0.0.1:${port}`;
       const health = await healthy(origin);
-      assert.equal(health.version, version);
+      assert.equal(health.version, expectedVersion);
+      if (mode === "proxy") {
+        console.log(
+          `PASS default build health version ${packageVersion} without VERSION build arg`,
+        );
+      }
       assert.equal(health.initialized, false);
       const uid = await docker(["exec", server, "id", "-u"]);
       assert(/^\d+$/u.test(uid) && Number(uid) > 0, "Container must run as non-root");

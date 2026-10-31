@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG VERSION=0.1.0
+ARG VERSION
 
 FROM node:26-slim AS build
 WORKDIR /app
@@ -10,8 +10,9 @@ RUN pnpm fetch --frozen-lockfile
 COPY . .
 RUN pnpm install --offline --frozen-lockfile
 ARG VERSION
+# Ordinary deploys keep package.json's version; release builds can override it.
 # Protocol and crypto export source; Vite and tsup compile them into their consumers.
-RUN npm pkg set --prefix apps/server version="$VERSION" \
+RUN if [ -n "$VERSION" ]; then npm pkg set --prefix apps/server version="$VERSION"; fi \
     && pnpm --filter @pneumo/web --filter @pneumo/server run build \
     && pnpm --filter @pneumo/server deploy --legacy --prod /prod/server
 

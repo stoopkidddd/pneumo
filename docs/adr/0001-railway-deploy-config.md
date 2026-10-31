@@ -18,6 +18,10 @@ The lead verified these constraints on 2026-10-31.
 ## Decision
 
 Ship the root `Dockerfile`, which Railway auto-detects, and no `railway.json`.
+Without a `VERSION` build argument, `/api/health` reports the version from
+`apps/server/package.json`. Release builds may supply an explicit override; the
+OCI version label contains that argument and is empty when it is omitted.
+
 The lead applies Railway service settings through Infrastructure as Code in
 ENG-271; ENG-273 sets the same settings in the deployment template:
 
