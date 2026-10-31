@@ -38,6 +38,7 @@ data class DeviceEntity(
 @Entity(tableName = "sync_state")
 data class SyncStateEntity(
     @PrimaryKey @ColumnInfo(name = "singleton_id") val singletonId: Int = SINGLETON_ID,
+    // An empty id seeds the inclusive server pairing timestamp before the first push.
     @ColumnInfo(name = "last_push_id") val lastPushId: String,
     @ColumnInfo(name = "last_created_at") val lastCreatedAt: String
 ) {

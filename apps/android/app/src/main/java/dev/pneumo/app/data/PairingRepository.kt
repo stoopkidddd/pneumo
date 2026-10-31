@@ -121,6 +121,8 @@ class PairingRepository internal constructor(
             finishMismatchCleanup(pending)
         }
 
+        lifecycle.claimed(response.device.createdAt)
+
         val masterKey = pairing.mk
         try {
             credentialStore.save(masterKey, pending.token)

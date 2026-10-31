@@ -19,6 +19,8 @@ import dev.pneumo.app.protocol.Platform
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.protocol.PushDeletedFrame
 import dev.pneumo.app.protocol.PushFrame
+import dev.pneumo.app.protocol.ReadyFrame
+import dev.pneumo.app.protocol.ReplayDoneFrame
 import dev.pneumo.app.protocol.ResyncFrame
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -136,6 +138,76 @@ class SyncEngineTest {
         assertEquals(CREATED_AT_5, position.lastCreatedAt)
         assertEquals(listOf(P1, P5, P4, P2), database.pushes().list().map { it.id })
         assertNull(database.pushes().find(P3))
+    }
+
+    @Test
+    fun nullCursorReconnectCatchesUpFromPairingPosition() = runTest {
+        database.syncState().put(SyncStateEntity(lastPushId = "", lastCreatedAt = CREATED_AT_2))
+        val pages = mutableMapOf<String?, ListPushesResponse>(
+            null to ListPushesResponse(listOf(push(P2, createdAt = CREATED_AT)), nextBefore = P2)
+        )
+        val api = FakePushApi(pages)
+        val cursor = FakeCursor()
+        val accepted = mutableListOf<String>()
+        val sink = PushSink { accepted += it.id }
+        val firstConnection = engine(api = api, cursor = cursor, sink = sink)
+        firstConnection.apply(ReadyFrame("ready", OWN_DEVICE, CREATED_AT_2))
+        firstConnection.apply(ReplayDoneFrame("replay_done"))
+        assertNull(cursor.value)
+
+        pages[null] = ListPushesResponse(
+            listOf(
+                push(P4, createdAt = CREATED_AT_3),
+                push(P1, createdAt = CREATED_AT_2),
+                push(P2, createdAt = CREATED_AT)
+            ),
+            nextBefore = P2
+        )
+        val reconnected = engine(api = api, cursor = cursor, sink = sink)
+        reconnected.apply(ReadyFrame("ready", OWN_DEVICE, CREATED_AT_3))
+        reconnected.apply(ReplayDoneFrame("replay_done"))
+        reconnected.apply(PushFrame("push", push(P4, createdAt = CREATED_AT_3)))
+
+        assertEquals(listOf(P1, P4), accepted)
+        assertEquals(listOf(P1, P4), cursor.advances)
+        assertEquals(P4, cursor.value)
+        assertEquals(listOf(P4, P1), database.pushes().list().map { it.id })
+        assertEquals(listOf(null, null), api.befores)
+    }
+
+    @Test
+    fun deletedCursorResyncStopsAtStoredPositionWithEmptyRoom() = runTest {
+        val api = FakePushApi(
+            mapOf(
+                null to ListPushesResponse(
+                    listOf(
+                        push(P1, createdAt = CREATED_AT_4),
+                        push(P5, createdAt = CREATED_AT_3),
+                        push(P2, createdAt = CREATED_AT_3)
+                    ),
+                    nextBefore = P2
+                )
+            )
+        )
+        val cursor = FakeCursor()
+        val accepted = mutableListOf<String>()
+        val engine = engine(api = api, cursor = cursor, sink = PushSink { accepted += it.id })
+        engine.apply(PushFrame("push", push(P3, createdAt = CREATED_AT_3)))
+        engine.apply(PushDeletedFrame("push_deleted", P3))
+        assertTrue(database.pushes().list().isEmpty())
+        accepted.clear()
+
+        engine.apply(ResyncFrame("resync"))
+
+        assertEquals(listOf(null), api.befores)
+        assertEquals(listOf(P5, P1), accepted)
+        assertEquals(listOf(P3, P5, P1), cursor.advances)
+        assertEquals(P1, cursor.value)
+        assertEquals(listOf(P1, P5), database.pushes().list().map { it.id })
+        assertEquals(
+            SyncStateEntity(lastPushId = P1, lastCreatedAt = CREATED_AT_4),
+            database.syncState().read()
+        )
     }
 
     @Test

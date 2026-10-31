@@ -10,6 +10,7 @@ import dev.pneumo.app.data.SessionLifecycle
 import dev.pneumo.app.data.SessionPreferences
 import dev.pneumo.app.data.SyncPreferences
 import dev.pneumo.app.data.db.PneumoDatabase
+import dev.pneumo.app.data.db.SyncStateEntity
 import dev.pneumo.app.net.AccountApi
 import dev.pneumo.app.net.ApiClient
 import dev.pneumo.app.net.DeviceApi
@@ -50,6 +51,10 @@ class AppContainer(context: Context) {
             credentialStore = SecureCredentialStore(credentials),
             sessionStore = sessions,
             lifecycle = object : SessionLifecycle {
+                override suspend fun claimed(createdAt: String) {
+                    database.syncState().put(SyncStateEntity(lastPushId = "", lastCreatedAt = createdAt))
+                }
+
                 override fun paired() {
                     ConnectionService.start(applicationContext)
                 }

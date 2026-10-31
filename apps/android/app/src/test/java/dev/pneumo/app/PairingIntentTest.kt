@@ -169,6 +169,8 @@ class PairingIntentTest {
             credentials,
             sessions,
             object : SessionLifecycle {
+                override suspend fun claimed(createdAt: String): Unit = error("Session must not be replaced")
+
                 override fun paired() = Unit
 
                 override suspend fun cleared(): Unit = error("Session must not be cleared")

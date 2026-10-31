@@ -403,6 +403,8 @@ class PairingViewModelTest {
         var starts = 0
         var clears = 0
 
+        override suspend fun claimed(createdAt: String) = Unit
+
         override fun paired() {
             starts += 1
         }

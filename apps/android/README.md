@@ -109,7 +109,8 @@ The alternative link field is masked and is not saved across recreation.
 `pneumo://pair` intents and pasted/scanned links use the existing strict
 `PairingUri` parser. Confirmation shows the server host before claiming with
 `Build.MODEL`. The repository claims, fetches `/api/me`, compares the derived key
-check in constant time, then saves verified credentials in `SecureStore`.
+check in constant time, then seeds Room's lower bound from the own device's server
+`createdAt` before saving verified credentials in `SecureStore`.
 Post-claim retries reuse the claimed token rather than claiming a consumed code.
 Application-scoped pending claims can be resumed by a replacement ViewModel;
 a different code first removes the previous unverified device.
@@ -163,9 +164,14 @@ It never persists plaintext or a decrypted-payload cache. Sign-out/revoke cancel
 and joins the connection before wiping Room and DataStore.
 
 `SyncEngine` applies frames serially, advances `lastPushId` after each applied
-push, and deduplicates replay/live delivery by id. Resync pages newest-first
-until Room overlap, then applies the missing pushes oldest-first. Cursor ordering
-uses server `(createdAt, id)`, not sender-generated UUID order. Heartbeats run
+push, and deduplicates replay/live delivery by id. With a null cursor, `ready`
+runs HTTP catch-up before queued live frames can move the lower bound past an
+offline gap. Both this path and explicit resync page newest-first until Room
+overlap or a push at/before the stored `(createdAt, id)` position, then apply the
+missing pushes oldest-first. The initial position uses the server pairing
+timestamp and an empty id, including pushes in that same millisecond without
+fetching earlier history. Deleting the cursor push does not remove this bound.
+Cursor ordering uses server time, not sender-generated UUID order. Heartbeats run
 independently of ordered frame application and HTTP catch-up.
 
 `PushSink` currently logs only push ids. Only non-self pushes targeted to this
@@ -233,9 +239,11 @@ history launches and stored-session precedence over cold and warm foreign links.
 
 Connection tests cover hello cursors, ordered replay/live dedupe, resync overlap,
 device/deletion frames, notification eligibility, unauthorized sign-out, jitter
-and reset, watchdog silence, network recovery, Room DAOs, decrypt-on-read, and
-cursor recovery across the DataStore/Room write boundary. Boot/service Robolectric
-tests cover paired/unpaired restoration and the silent minimum-importance channel.
+and reset, watchdog silence, network recovery, Room DAOs, decrypt-on-read, null-cursor
+reconnects before the first live push, deleted-cursor resync with empty history,
+and cursor recovery across the DataStore/Room write boundary. Boot/service
+Robolectric tests cover paired/unpaired restoration and the silent
+minimum-importance channel.
 
 There is no Android/server managed-device harness yet. ENG-259's local-server
 check used a regular API 34 emulator, deep-link pairing, and the onboarding battery

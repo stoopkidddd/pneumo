@@ -120,6 +120,8 @@ class ConnectionServiceTest {
             override suspend fun clearSession(): Unit = error("Unexpected clear")
         },
         lifecycle = object : SessionLifecycle {
+            override suspend fun claimed(createdAt: String): Unit = error("Unexpected claim")
+
             override fun paired() {
                 ConnectionService.start(context)
             }

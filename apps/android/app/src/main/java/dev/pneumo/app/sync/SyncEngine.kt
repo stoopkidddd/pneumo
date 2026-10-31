@@ -58,7 +58,9 @@ class SyncEngine(
 
             is ResyncFrame -> resync()
 
-            is ReadyFrame,
+            // Catch up before queued live pushes can move the lower bound past an offline gap.
+            is ReadyFrame -> if (cursor.read() == null) resync()
+
             is ReplayDoneFrame,
             is PingFrame -> Unit
         }
@@ -78,6 +80,7 @@ class SyncEngine(
     }
 
     private suspend fun resync() {
+        val lowerBound = currentPosition()
         val pending = mutableListOf<PushDTO>()
         var before: String? = null
         var continuePaging: Boolean
@@ -86,7 +89,7 @@ class SyncEngine(
             var overlapped = false
             val existing = pushes.existingIds(page.pushes.map(PushDTO::id)).toHashSet()
             for (push in page.pushes) {
-                if (push.id in existing) {
+                if (push.id in existing || (lowerBound != null && !push.isAfter(lowerBound))) {
                     overlapped = true
                     break
                 }
