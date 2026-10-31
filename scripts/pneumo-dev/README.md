@@ -3,12 +3,13 @@
 Run from the repository root with mise's pinned tools and environment:
 
 ```sh
-mise exec -- pnpm dev-client <command> --session <path>
+mise exec -- pnpm --silent dev-client <command> --session <path>
 ```
 
-In a mise-activated shell, `pnpm dev-client <command>` is equivalent. mise sets
-`pnpm_config_loglevel=silent` because pnpm otherwise echoes credential-bearing
-script arguments. Outside that environment, use `pnpm --silent dev-client`.
+In a mise-activated shell, use `pnpm --silent dev-client <command>`. Always
+pass `--silent`: pnpm otherwise echoes credential-bearing script arguments
+and adds its own stdout text on failure. This flag affects only the dev-client
+invocation; other pnpm commands keep their normal diagnostics.
 Do not enable shell tracing for these commands.
 
 Only `@pneumo/protocol`, `@pneumo/crypto`, and Node builtins are used at runtime.
@@ -23,12 +24,12 @@ Writes atomically replace the file with mode `0600`. Treat session files as
 credentials and remove them when finished.
 
 ```sh
-pnpm dev-client setup --url http://localhost:8080 \
+pnpm --silent dev-client setup --url http://localhost:8080 \
   --setup-token "$PNEUMO_SETUP_TOKEN" --passphrase "$PASSPHRASE" --session "$A"
-pnpm dev-client login --url http://localhost:8080 \
+pnpm --silent dev-client login --url http://localhost:8080 \
   --passphrase "$PASSPHRASE" --name cli --session "$A"
-uri=$(pnpm dev-client pair-uri --session "$A")
-pnpm dev-client claim --uri "$uri" --session "$B"
+uri=$(pnpm --silent dev-client pair-uri --session "$A")
+pnpm --silent dev-client claim --uri "$uri" --session "$B"
 unset uri
 ```
 
@@ -44,10 +45,10 @@ different `--session` path to claim so the original device remains available.
 ## Pushes and files
 
 ```sh
-pnpm dev-client send note 'hello' --to "$DEVICE_ID" --session "$A"
-pnpm dev-client send link https://example.com --title Example --session "$A"
-pnpm dev-client send file ./payload.bin --to "$DEVICE_ID" --session "$A"
-pnpm dev-client download "$PUSH_ID" --out ./download.bin --session "$B"
+pnpm --silent dev-client send note 'hello' --to "$DEVICE_ID" --session "$A"
+pnpm --silent dev-client send link https://example.com --title Example --session "$A"
+pnpm --silent dev-client send file ./payload.bin --to "$DEVICE_ID" --session "$A"
+pnpm --silent dev-client download "$PUSH_ID" --out ./download.bin --session "$B"
 ```
 
 Send prints only the push id. Omitting `--to` broadcasts to all devices. Files
@@ -59,10 +60,10 @@ the output file or leave its temporary plaintext file behind.
 ## Live reception
 
 ```sh
-pnpm dev-client listen --session "$B"
-pnpm dev-client wait-for --type note --body hello --timeout 10 --session "$B"
-pnpm dev-client wait-for --type link --url https://example.com --timeout 10 --session "$B"
-pnpm dev-client wait-for --type file --file-name payload.bin --timeout 10 --session "$B"
+pnpm --silent dev-client listen --session "$B"
+pnpm --silent dev-client wait-for --type note --body hello --timeout 10 --session "$B"
+pnpm --silent dev-client wait-for --type link --url https://example.com --timeout 10 --session "$B"
+pnpm --silent dev-client wait-for --type file --file-name payload.bin --timeout 10 --session "$B"
 ```
 
 Listen prints one decrypted JSON object per push, with `id`, `type`, `title`
@@ -81,9 +82,9 @@ sender.
 ## Smoke and checks
 
 ```sh
-pnpm dev-client smoke --url http://localhost:8080 \
+pnpm --silent dev-client smoke --url http://localhost:8080 \
   --setup-token "$PNEUMO_SETUP_TOKEN" --session "$A"
-pnpm dev-client smoke --url http://localhost:8080 \
+pnpm --silent dev-client smoke --url http://localhost:8080 \
   --passphrase "$PASSPHRASE" --session "$A"
 mise run check:server
 mise run e2e:server

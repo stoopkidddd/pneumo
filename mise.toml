@@ -7,8 +7,6 @@ shellcheck = "0.11.0"
 [env]
 _.file = { path = ".env.local", redact = true }
 ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
-# Do not echo script arguments: dev-client commands carry credentials.
-pnpm_config_loglevel = "silent"
 
 [tasks.check]
 description = "Run every lane check"
@@ -19,14 +17,8 @@ description = "Check protocol and crypto formatting, lint, types and tests"
 run = "bash scripts/ci/check.sh protocol"
 
 [tasks."check:server"]
-description = "Check server and dev-client formatting, lint, types and tests"
-run = """
-set -e
-bash scripts/ci/check.sh server
-pnpm exec biome check --error-on-warnings package.json scripts/pneumo-dev.ts scripts/pneumo-dev
-pnpm exec tsc --project scripts/pneumo-dev/tsconfig.json
-pnpm exec vitest run --config scripts/pneumo-dev/vitest.config.ts
-"""
+description = "Check server formatting, lint, types and tests"
+run = "bash scripts/ci/check.sh server"
 
 [tasks."e2e:server"]
 description = "Run server MinIO integration and dev-client smoke suites"

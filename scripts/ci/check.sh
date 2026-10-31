@@ -13,6 +13,9 @@ case "${1:-}" in
     pnpm exec biome check --error-on-warnings apps/server
     pnpm --filter @pneumo/server run typecheck
     pnpm exec vitest run --project @pneumo/server
+    pnpm exec biome check --error-on-warnings package.json scripts/pneumo-dev.ts scripts/pneumo-dev
+    pnpm exec tsc --project scripts/pneumo-dev/tsconfig.json
+    pnpm exec vitest run --config scripts/pneumo-dev/vitest.config.ts
     ;;
   web)
     pnpm exec biome check --error-on-warnings apps/web

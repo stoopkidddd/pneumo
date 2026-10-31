@@ -116,13 +116,13 @@ test("decrypted file output contains the name and source but not the file key or
   expect([key, token, mk].some((secret) => serialized.includes(secret))).toBe(false);
 });
 
-test("pnpm does not echo credential-bearing command arguments", async () => {
+test("pnpm --silent does not echo credential-bearing command arguments", async () => {
   const sentinel = "fake-passphrase-must-not-be-echoed";
   let stdout = "";
   let stderr = "";
   let failed = false;
   try {
-    await exec("pnpm", ["dev-client", "claim", "--uri", sentinel], {
+    await exec("pnpm", ["--silent", "dev-client", "claim", "--uri", sentinel], {
       cwd: new URL("../../", import.meta.url),
     });
   } catch (error) {
