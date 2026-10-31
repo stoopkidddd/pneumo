@@ -12,7 +12,7 @@ const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 function lastSeen(timestamp: string, now: number): string {
   const age = Math.max(0, Math.floor((now - Date.parse(timestamp)) / 1000));
-  if (age < 60) return "Just now";
+  if (age < 60) return "just now";
   const unit = age < 3600 ? "minute" : age < 86400 ? "hour" : "day";
   return relativeTime.format(
     -Math.floor(age / (unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400)),
