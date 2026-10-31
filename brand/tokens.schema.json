@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pneumo brand tokens",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["color", "typography", "spacing", "radii", "shadow", "motion"],
+  "properties": {
+    "color": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["light", "dark"],
+      "properties": {
+        "light": { "$ref": "#/$defs/theme" },
+        "dark": { "$ref": "#/$defs/theme" }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display", "ui", "scale"],
+      "properties": {
+        "display": { "$ref": "#/$defs/font" },
+        "ui": { "$ref": "#/$defs/font" },
+        "scale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["caption", "label", "body", "heading", "title", "display"],
+          "properties": {
+            "caption": { "$ref": "#/$defs/typeStep" },
+            "label": { "$ref": "#/$defs/typeStep" },
+            "body": { "$ref": "#/$defs/typeStep" },
+            "heading": { "$ref": "#/$defs/typeStep" },
+            "title": { "$ref": "#/$defs/typeStep" },
+            "display": { "$ref": "#/$defs/typeStep" }
+          }
+        }
+      }
+    },
+    "spacing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["none", "xs", "sm", "md", "lg", "xl", "2xl", "3xl"],
+      "properties": {
+        "none": { "type": "number", "const": 0 },
+        "xs": { "$ref": "#/$defs/nonnegativeNumber" },
+        "sm": { "$ref": "#/$defs/nonnegativeNumber" },
+        "md": { "$ref": "#/$defs/nonnegativeNumber" },
+        "lg": { "$ref": "#/$defs/nonnegativeNumber" },
+        "xl": { "$ref": "#/$defs/nonnegativeNumber" },
+        "2xl": { "$ref": "#/$defs/nonnegativeNumber" },
+        "3xl": { "$ref": "#/$defs/nonnegativeNumber" }
+      }
+    },
+    "radii": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sm", "md", "lg", "pill"],
+      "properties": {
+        "sm": { "$ref": "#/$defs/nonnegativeNumber" },
+        "md": { "$ref": "#/$defs/nonnegativeNumber" },
+        "lg": { "$ref": "#/$defs/nonnegativeNumber" },
+        "pill": { "$ref": "#/$defs/nonnegativeNumber" }
+      }
+    },
+    "shadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["light", "dark"],
+      "properties": {
+        "light": { "type": "string", "minLength": 1 },
+        "dark": { "type": "string", "minLength": 1 }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fast", "standard", "deliberate"],
+      "properties": {
+        "fast": { "$ref": "#/$defs/nonnegativeNumber" },
+        "standard": { "$ref": "#/$defs/nonnegativeNumber" },
+        "deliberate": { "$ref": "#/$defs/nonnegativeNumber" }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-F]{6}$"
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "surface",
+        "surface-raised",
+        "text",
+        "text-muted",
+        "accent",
+        "accent-contrast",
+        "border",
+        "success",
+        "danger",
+        "focus-ring"
+      ],
+      "properties": {
+        "background": { "$ref": "#/$defs/color" },
+        "surface": { "$ref": "#/$defs/color" },
+        "surface-raised": { "$ref": "#/$defs/color" },
+        "text": { "$ref": "#/$defs/color" },
+        "text-muted": { "$ref": "#/$defs/color" },
+        "accent": { "$ref": "#/$defs/color" },
+        "accent-contrast": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/color" },
+        "success": { "$ref": "#/$defs/color" },
+        "danger": { "$ref": "#/$defs/color" },
+        "focus-ring": { "$ref": "#/$defs/color" }
+      }
+    },
+    "font": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "weight", "file", "fallback"],
+      "properties": {
+        "family": { "type": "string", "minLength": 1 },
+        "weight": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "file": { "type": "string", "pattern": "^[a-z0-9-]+\\.woff2$" },
+        "fallback": { "type": "string", "minLength": 1 }
+      }
+    },
+    "typeStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontSize", "lineHeight"],
+      "properties": {
+        "fontSize": { "type": "number", "exclusiveMinimum": 0 },
+        "lineHeight": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "nonnegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

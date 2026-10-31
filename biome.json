@@ -12,6 +12,8 @@
       "packages/crypto/**",
       "apps/server/**",
       "apps/web/**",
+      "scripts/**",
+      "brand/**",
       "!!**/node_modules",
       "!!**/dist",
       "!!**/coverage",

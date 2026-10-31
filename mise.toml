@@ -9,7 +9,7 @@ ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
 
 [tasks.check]
 description = "Run every lane check"
-depends = ["check:protocol", "check:server", "check:web", "check:android"]
+depends = ["check:protocol", "check:server", "check:web", "check:android", "check:brand"]
 
 [tasks."check:protocol"]
 description = "Check protocol and crypto formatting, lint, types and tests"
@@ -54,3 +54,14 @@ run = "./gradlew spotlessCheck detekt lint testDebugUnitTest verifyRoborazziDebu
 description = "Run the Pixel 6 API 34 managed-device smoke test"
 dir = "apps/android"
 run = "./gradlew pixel6Api34DebugAndroidTest"
+
+[tasks."brand:export"]
+description = "Export deterministic brand assets and design tokens"
+run = "pnpm exec node scripts/brand-export.mjs"
+
+[tasks."check:brand"]
+description = "Validate brand sources, contrast and reproducible generated assets"
+run = [
+  "pnpm exec biome check --error-on-warnings scripts/brand-export.mjs brand/tokens.json brand/tokens.schema.json",
+  "pnpm exec node scripts/brand-export.mjs --check",
+]
