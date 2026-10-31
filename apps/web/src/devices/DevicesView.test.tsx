@@ -36,6 +36,7 @@ function renderDevices() {
   const api = createApiClient({ onUnauthorized: vi.fn() });
   const state: HomeState = {
     items: [],
+    uploads: [],
     devices: [phone, browser],
     lastAddedDevice: null,
     maxEnvelopeBytes: 65536,
@@ -52,6 +53,10 @@ function renderDevices() {
     find: vi.fn(),
     renameDevice: vi.fn(),
     removeDevice,
+    sendFiles: vi.fn(),
+    cancelUpload: vi.fn(),
+    dismissUpload: vi.fn(),
+    download: vi.fn(),
   };
   render(<DevicesView api={api} session={session} state={state} onRemoveSelf={onRemoveSelf} />);
   return { removeDevice, onRemoveSelf };
