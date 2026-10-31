@@ -32,6 +32,8 @@ data class UploadOptions(
     val maxEnvelopeBytes: Long
 )
 
+internal class UploadSchedulerDependencies(val store: UploadWorkStore, val workManager: WorkManager)
+
 object UploadScheduler {
     const val WORK_TAG = "file_upload"
     const val PROGRESS_PERCENT = "progress_percent"
@@ -42,6 +44,26 @@ object UploadScheduler {
         session: AppSession,
         attachments: List<UploadAttachment>,
         options: UploadOptions
+    ) {
+        val applicationContext = context.applicationContext
+        enqueue(
+            context = applicationContext,
+            session = session,
+            attachments = attachments,
+            options = options,
+            dependencies = UploadSchedulerDependencies(
+                store = UploadWorkStore.create(applicationContext),
+                workManager = WorkManager.getInstance(applicationContext)
+            )
+        )
+    }
+
+    internal suspend fun enqueue(
+        context: Context,
+        session: AppSession,
+        attachments: List<UploadAttachment>,
+        options: UploadOptions,
+        dependencies: UploadSchedulerDependencies
     ): Unit = withContext(Dispatchers.IO) {
         val applicationContext = context.applicationContext
         validatePreparedAttachments(applicationContext, attachments, options)
@@ -54,7 +76,7 @@ object UploadScheduler {
                 index = index
             )
         }
-        persistAndEnqueue(applicationContext, session.deviceId, attachments, items)
+        persistAndEnqueue(applicationContext, session.deviceId, attachments, items, dependencies)
     }
 
     private fun validatePreparedAttachments(
@@ -131,9 +153,10 @@ object UploadScheduler {
         context: Context,
         sessionDeviceId: String,
         attachments: List<UploadAttachment>,
-        initialItems: List<StoredUploadItem>
+        initialItems: List<StoredUploadItem>,
+        dependencies: UploadSchedulerDependencies
     ) {
-        val store = UploadWorkStore.create(context)
+        val store = dependencies.store
         val key = store.newKey()
         var enqueued = false
         try {
@@ -148,7 +171,7 @@ object UploadScheduler {
                 )
             }
             store.write(key, StoredUploadWork(sessionDeviceId, items))
-            awaitEnqueue(WorkManager.getInstance(context), workRequest(key))
+            awaitEnqueue(dependencies.workManager, workRequest(key))
             enqueued = true
         } finally {
             if (!enqueued) {

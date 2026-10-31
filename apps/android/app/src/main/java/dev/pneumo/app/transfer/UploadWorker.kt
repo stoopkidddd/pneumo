@@ -18,12 +18,15 @@ import dev.pneumo.app.PneumoApp
 import dev.pneumo.app.R
 import dev.pneumo.app.crypto.Base64Url
 import dev.pneumo.app.crypto.FileCrypto
+import dev.pneumo.app.crypto.PushCrypto
 import dev.pneumo.app.data.AppSession
 import dev.pneumo.app.data.db.toEntity
 import dev.pneumo.app.net.ApiError
 import dev.pneumo.app.protocol.CreateFileRequest
 import dev.pneumo.app.protocol.CreatePushFile
 import dev.pneumo.app.protocol.Envelope
+import dev.pneumo.app.protocol.FilePayload
+import dev.pneumo.app.protocol.PayloadFile
 import dev.pneumo.app.protocol.ProtocolJson
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.ui.theme.BrandColors
@@ -198,39 +201,59 @@ private suspend fun ensureFirstItemUploaded(
         progress(PERCENT_MAX)
         return work
     }
-    val fileId = uploadContent(run.context, run.session, item, progress)
-    val updatedItems = work.items.toMutableList()
-    updatedItems[0] = item.copy(request = item.request.copy(file = CreatePushFile(fileId)))
-    return work.copy(items = updatedItems).also { updated ->
-        writeStoredWork(run.dependencies.store, run.key, updated)
-    }
-}
-
-private suspend fun uploadContent(
-    context: Context,
-    session: AppSession,
-    item: StoredUploadItem,
-    progress: (Int) -> Unit
-): String {
     checkedStoredCiphertextSize(item)
-    val fileKey = decodeStoredFileKey(item.fileKey)
+    check(run.session.cache.generation() == run.session.generation) { "The paired session has changed." }
+    val reservation = run.session.api.createFile(CreateFileRequest(item.ciphertextSize))
+    val fileKey = FileCrypto.generateFileKey()
     try {
-        check(session.cache.generation() == session.generation) { "The paired session has changed." }
-        val reservation = session.api.createFile(CreateFileRequest(item.ciphertextSize))
+        val payload = PushCrypto.decrypt(
+            run.session.contentKey,
+            item.request.id,
+            item.request.envelope
+        ) as? FilePayload ?: throw UploadSpoolException()
+        val encodedFileKey = Base64Url.encode(fileKey)
+        val rotatedPayload = FilePayload(
+            title = payload.title,
+            body = payload.body,
+            file = PayloadFile(
+                name = payload.file.name,
+                mime = payload.file.mime,
+                size = payload.file.size,
+                key = encodedFileKey
+            )
+        )
+        val reservedItem = item.copy(
+            fileKey = encodedFileKey,
+            request = item.request.copy(
+                envelope = PushCrypto.encrypt(run.session.contentKey, item.request.id, rotatedPayload)
+            )
+        )
+        val reservedWork = work.replaceFirst(reservedItem)
+        writeStoredWork(run.dependencies.store, run.key, reservedWork)
         val body = EncryptedFileRequestBody(
             EncryptedUploadSource(
-                context = context,
-                item = item,
+                context = run.context,
+                item = reservedItem,
                 fileKey = fileKey,
                 fileId = reservation.fileId
             ),
             progress
         )
-        session.api.uploadTo(reservation.upload, body)
-        return reservation.fileId
+        run.session.api.uploadTo(reservation.upload, body)
+        val uploadedWork = reservedWork.replaceFirst(
+            reservedItem.copy(request = reservedItem.request.copy(file = CreatePushFile(reservation.fileId)))
+        )
+        writeStoredWork(run.dependencies.store, run.key, uploadedWork)
+        return uploadedWork
     } finally {
         fileKey.fill(0)
     }
+}
+
+private fun StoredUploadWork.replaceFirst(item: StoredUploadItem): StoredUploadWork {
+    val updatedItems = items.toMutableList()
+    updatedItems[0] = item
+    return copy(items = updatedItems)
 }
 
 private suspend fun sendUploadedItem(
@@ -255,9 +278,6 @@ private fun checkedStoredCiphertextSize(item: StoredUploadItem) {
         .getOrElse { failure -> throw UploadSpoolException(failure) }
     if (expectedSize != item.ciphertextSize) throw UploadSpoolException()
 }
-
-private fun decodeStoredFileKey(value: String): ByteArray = runCatching { Base64Url.decode(value) }
-    .getOrElse { failure -> throw UploadSpoolException(failure) }
 
 internal class UploadForeground(private val context: Context, workerHash: Int) {
     private val manager = context.getSystemService(NotificationManager::class.java)

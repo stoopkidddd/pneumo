@@ -89,6 +89,22 @@ class DownloadWorkerTest {
     }
 
     @Test
+    fun multiChunkDecryptionWritesPlaintextToDestinationInBulk() = runTest {
+        val plaintext = ByteArray(196_731) { (it * 17 + 3).toByte() }
+        val ciphertext = encrypt(plaintext)
+        server.enqueue(metadataResponse("/api/files/$FILE_ID/content"))
+        server.enqueue(bytesResponse(ciphertext))
+
+        initialize(push(plaintext.size.toLong(), ciphertext.size.toLong()))
+        val info = runWorker()
+
+        assertEquals(WorkInfo.State.SUCCEEDED, info.state)
+        assertTrue(destinations.last.bytes.toByteArray().contentEquals(plaintext))
+        assertTrue(destinations.last.bulkWrites > 0)
+        assertEquals(0, destinations.last.scalarWrites)
+    }
+
+    @Test
     fun directMetadataTargetStreamsDecryptExactBytesWithoutForwardingBearer() = runTest {
         val plaintext = ByteArray(1_048_576) { (it xor (it ushr 8)).toByte() }
         val ciphertext = encrypt(plaintext)
@@ -269,11 +285,24 @@ class DownloadWorkerTest {
 
     private class RecordingDestination : DownloadDestination {
         val bytes = ByteArrayOutputStream()
+        var bulkWrites = 0
+        var scalarWrites = 0
         var completed = false
         var deleted = false
         override val uri: Uri = Uri.parse("content://dev.pneumo.app.test/download")
+        private val output = object : OutputStream() {
+            override fun write(value: Int) {
+                scalarWrites += 1
+                bytes.write(value)
+            }
 
-        override fun openOutput(): OutputStream = bytes
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                bulkWrites += 1
+                bytes.write(buffer, offset, length)
+            }
+        }
+
+        override fun openOutput(): OutputStream = output
 
         override fun complete() {
             completed = true

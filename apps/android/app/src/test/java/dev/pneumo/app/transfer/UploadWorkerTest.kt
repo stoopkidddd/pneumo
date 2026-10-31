@@ -36,6 +36,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
@@ -47,6 +48,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -120,19 +122,32 @@ class UploadWorkerTest {
             assertEquals(WorkInfo.State.SUCCEEDED, info.state)
             val upload = dispatcher.uploads.removeAt(0)
             assertEquals(FileCrypto.ciphertextSize(size.toLong()), upload.contentLength)
-            assertEquals(if (dispatcher.direct) null else "Bearer $BEARER_TOKEN", upload.authorization)
-            val decrypted = ByteArrayOutputStream()
-            FileCrypto.decrypt(
-                ByteArrayInputStream(upload.bytes),
-                decrypted,
-                job.fileKey,
-                FILE_ID
+            assertEquals(
+                if (dispatcher.direct) {
+                    "/direct/${upload.fileId}"
+                } else {
+                    "/api/files/${upload.fileId}/content"
+                },
+                upload.path
             )
-            assertArrayEquals(plaintext, decrypted.toByteArray())
+            assertEquals(if (dispatcher.direct) null else "Bearer $BEARER_TOKEN", upload.authorization)
             val stored = storedPushes.last()
             val payload = PushCrypto.decrypt(SecretKeySpec(CONTENT_KEY, "AES"), stored.id, stored.envelope)
                 as FilePayload
-            assertEquals(Base64Url.encode(job.fileKey), payload.file.key)
+            val uploadedFileKey = Base64Url.decode(payload.file.key)
+            try {
+                val decrypted = ByteArrayOutputStream()
+                FileCrypto.decrypt(
+                    ByteArrayInputStream(upload.bytes),
+                    decrypted,
+                    uploadedFileKey,
+                    upload.fileId
+                )
+                assertArrayEquals(plaintext, decrypted.toByteArray())
+                assertFalse(uploadedFileKey.contentEquals(job.fileKey))
+            } finally {
+                uploadedFileKey.fill(0)
+            }
             assertEquals(size.toLong(), payload.file.size)
             assertFalse(store.exists(job.key))
             assertFalse(job.source.exists())
@@ -173,6 +188,72 @@ class UploadWorkerTest {
         assertTrue(store.exists(job.key))
         assertTrue(job.source.exists())
         assertTrue(storedPushes.isEmpty())
+    }
+
+    @Test
+    fun failedPutRetriesWithANewReservationFileKeyAndEnvelope() = runBlocking {
+        dispatcher.failNextUpload = true
+        val plaintext = byteArrayOf(8, 5, 3, 0, 9)
+        val job = writeJob(
+            plaintext = plaintext,
+            name = "rotating.bin",
+            mime = "application/rotation-test",
+            options = ROTATION_OPTIONS
+        )
+
+        val first = runStoredUploadWork(context, job.key, dependencies)
+        val persisted = store.read(job.key)
+        val firstPayload = PushCrypto.decrypt(
+            SecretKeySpec(CONTENT_KEY, "AES"),
+            persisted.items.single().request.id,
+            persisted.items.single().request.envelope
+        ) as FilePayload
+        val firstFileKey = Base64Url.decode(firstPayload.file.key)
+        try {
+            val second = runStoredUploadWork(context, job.key, dependencies)
+            val secondPayload = PushCrypto.decrypt(
+                SecretKeySpec(CONTENT_KEY, "AES"),
+                storedPushes.single().id,
+                storedPushes.single().envelope
+            ) as FilePayload
+            val secondFileKey = Base64Url.decode(secondPayload.file.key)
+            try {
+                assertEquals(ListenableWorker.Result.retry(), first)
+                assertEquals(
+                    ListenableWorker.Result.success(workDataOf(UploadScheduler.PROGRESS_PERCENT to 100)),
+                    second
+                )
+                assertEquals(2, dispatcher.reserveCount)
+                assertEquals(2, dispatcher.uploadCount)
+                assertEquals(2, dispatcher.uploads.size)
+                dispatcher.uploads.forEach { upload ->
+                    assertEquals("/api/files/${upload.fileId}/content", upload.path)
+                    assertTrue(upload.authorization == "Bearer $BEARER_TOKEN")
+                }
+                assertFalse(firstFileKey.contentEquals(job.fileKey))
+                assertFalse(firstFileKey.contentEquals(secondFileKey))
+                assertDecryptedUpload(plaintext, dispatcher.uploads[0], firstFileKey)
+                assertDecryptedUpload(plaintext, dispatcher.uploads[1], secondFileKey)
+                listOf(firstPayload, secondPayload).forEach { assertRotationMetadata(it, plaintext.size.toLong()) }
+                assertEquals(persisted.items.single().request.id, storedPushes.single().id)
+                assertEquals(OTHER_DEVICE_ID, storedPushes.single().targetDeviceId)
+                assertEquals(dispatcher.uploads[1].fileId, storedPushes.single().file?.id)
+                assertFalse(store.exists(job.key))
+                assertFalse(job.source.exists())
+            } finally {
+                secondFileKey.fill(0)
+            }
+        } finally {
+            firstFileKey.fill(0)
+        }
+    }
+
+    private fun assertRotationMetadata(payload: FilePayload, size: Long) {
+        assertEquals("Preserved title", payload.title)
+        assertEquals("Preserved caption", payload.body)
+        assertEquals("rotating.bin", payload.file.name)
+        assertEquals("application/rotation-test", payload.file.mime)
+        assertEquals(size, payload.file.size)
     }
 
     @Test
@@ -295,7 +376,8 @@ class UploadWorkerTest {
         plaintext: ByteArray,
         sessionDeviceId: String = DEVICE_ID,
         name: String = "boundary.bin",
-        mime: String = "application/octet-stream"
+        mime: String = "application/octet-stream",
+        options: UploadOptions = UploadOptions(null, maxFileBytes = Long.MAX_VALUE, maxEnvelopeBytes = Long.MAX_VALUE)
     ): JobFixture {
         val key = store.newKey()
         val sourceDirectory = store.sources.directory(key)
@@ -305,6 +387,8 @@ class UploadWorkerTest {
         val fileKey = ByteArray(32) { (it + 1).toByte() }
         val pushId = Uuidv7.generate()
         val payload = FilePayload(
+            title = options.title,
+            body = options.body,
             file = PayloadFile(name, mime, plaintext.size.toLong(), Base64Url.encode(fileKey))
         )
         val item = StoredUploadItem(
@@ -314,7 +398,7 @@ class UploadWorkerTest {
             fileKey = Base64Url.encode(fileKey),
             request = CreatePushRequest(
                 id = pushId,
-                targetDeviceId = null,
+                targetDeviceId = options.targetDeviceId,
                 envelope = PushCrypto.encrypt(SecretKeySpec(CONTENT_KEY, "AES"), pushId, payload),
                 file = null
             )
@@ -347,6 +431,17 @@ class UploadWorkerTest {
         }
     }
 
+    private fun assertDecryptedUpload(plaintext: ByteArray, upload: CapturedUpload, fileKey: ByteArray) {
+        val decrypted = ByteArrayOutputStream()
+        FileCrypto.decrypt(
+            ByteArrayInputStream(upload.bytes),
+            decrypted,
+            fileKey,
+            upload.fileId
+        )
+        assertArrayEquals(plaintext, decrypted.toByteArray())
+    }
+
     private data class JobFixture(val key: String, val source: java.io.File, val fileKey: ByteArray)
 
     private class UploadTestWorkerFactory(private val dependencies: () -> UploadWorkerDependencies) : WorkerFactory() {
@@ -371,14 +466,22 @@ class UploadWorkerTest {
         @Volatile var reserveCount = 0
 
         @Volatile var uploadCount = 0
+
+        @Volatile var failNextUpload = false
         val pushBodies = CopyOnWriteArrayList<String>()
         val uploads = CopyOnWriteArrayList<CapturedUpload>()
+        private val expectedUploads = ConcurrentHashMap<String, ReservedUpload>()
 
         override fun dispatch(request: RecordedRequest): MockResponse = when {
             request.method == "GET" && request.path == "/api/me" -> me()
+
             request.method == "POST" && request.path == "/api/files" -> reserve()
-            request.method == "PUT" -> upload(request)
+
+            request.method == "PUT" &&
+                request.path?.let(expectedUploads::containsKey) == true -> upload(request)
+
             request.method == "POST" && request.path == "/api/pushes" -> push(request)
+
             else -> MockResponse().setResponseCode(404)
         }
 
@@ -410,15 +513,14 @@ class UploadWorkerTest {
                     reserveStatus
                 )
             }
-            val uploadUrl = if (direct) {
-                server.url("/direct/$FILE_ID").toString()
-            } else {
-                "/api/files/$FILE_ID/content"
-            }
+            val fileId = fileId(reserveCount)
+            val path = if (direct) "/direct/$fileId" else "/api/files/$fileId/content"
+            expectedUploads[path] = ReservedUpload(fileId)
+            val uploadUrl = if (direct) server.url(path).toString() else path
             return jsonResponse(
                 """
                 {
-                  "fileId": "$FILE_ID",
+                  "fileId": "$fileId",
                   "upload": {"method": "PUT", "url": "$uploadUrl", "headers": {}},
                   "expiresAt": "$TIMESTAMP"
                 }
@@ -428,19 +530,34 @@ class UploadWorkerTest {
         }
 
         private fun upload(request: RecordedRequest): MockResponse {
+            val path = checkNotNull(request.path)
+            val expected = checkNotNull(expectedUploads.remove(path))
             uploadCount += 1
             uploads += CapturedUpload(
                 bytes = request.body.readByteArray(),
                 contentLength = checkNotNull(request.getHeader("Content-Length")).toLong(),
-                authorization = request.getHeader("Authorization")
+                authorization = request.getHeader("Authorization"),
+                path = path,
+                fileId = expected.fileId
             )
-            return MockResponse().setResponseCode(204)
+            return if (failNextUpload) {
+                failNextUpload = false
+                jsonResponse("""{"error":{"code":"unavailable","message":"No"}}""", 503)
+            } else {
+                MockResponse().setResponseCode(204)
+            }
         }
 
         private fun push(request: RecordedRequest): MockResponse {
             val body = request.body.readUtf8()
             pushBodies += body
             val submitted = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+            val submittedFileId = checkNotNull(submitted["file"])
+                .jsonObject
+                .getValue("id")
+                .jsonPrimitive
+                .content
+            val upload = checkNotNull(uploads.lastOrNull { it.fileId == submittedFileId })
             val response = buildJsonObject {
                 put("id", checkNotNull(submitted["id"]))
                 put("createdAt", JsonPrimitive(TIMESTAMP))
@@ -450,8 +567,8 @@ class UploadWorkerTest {
                 put(
                     "file",
                     buildJsonObject {
-                        put("id", JsonPrimitive(FILE_ID))
-                        put("size", JsonPrimitive(checkNotNull(uploads.lastOrNull()).contentLength))
+                        put("id", JsonPrimitive(submittedFileId))
+                        put("size", JsonPrimitive(upload.contentLength))
                     }
                 )
             }
@@ -462,9 +579,19 @@ class UploadWorkerTest {
             .setResponseCode(status)
             .setHeader("Content-Type", "application/json")
             .setBody(body)
+
+        private fun fileId(index: Int): String = "018f0c6e-7a00-7000-8000-${(index + 2).toString().padStart(12, '0')}"
     }
 
-    private data class CapturedUpload(val bytes: ByteArray, val contentLength: Long, val authorization: String?)
+    private data class ReservedUpload(val fileId: String)
+
+    private data class CapturedUpload(
+        val bytes: ByteArray,
+        val contentLength: Long,
+        val authorization: String?,
+        val path: String,
+        val fileId: String
+    )
 
     private class TestKeyWrapper : KeyWrapper {
         private val key = SecretKeySpec(ByteArray(32) { (it + 11).toByte() }, "AES")
@@ -491,5 +618,12 @@ class UploadWorkerTest {
         const val OTHER_DEVICE_ID = "018f0c6e-7a00-7000-8000-000000000099"
         const val FILE_ID = "018f0c6e-7a00-7000-8000-000000000003"
         const val TIMESTAMP = "2026-10-30T12:00:00.000Z"
+        val ROTATION_OPTIONS = UploadOptions(
+            targetDeviceId = OTHER_DEVICE_ID,
+            title = "Preserved title",
+            body = "Preserved caption",
+            maxFileBytes = Long.MAX_VALUE,
+            maxEnvelopeBytes = Long.MAX_VALUE
+        )
     }
 }

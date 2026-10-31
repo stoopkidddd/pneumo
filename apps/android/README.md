@@ -268,9 +268,9 @@ state on resume, and shows the server authority and app version.
 `UploadAttachments` reads `OpenableColumns` name/size and the resolver MIME type,
 falling back to a concrete intent MIME type, the extension, then
 `application/octet-stream`. Before enabling Send, it snapshots each source into
-app-private cache. This includes picker documents: immutable snapshots avoid
-re-encrypting changed provider bytes with the same file key on a retry. Workers
-therefore do not depend on temporary grants or retain persistable URI permissions.
+app-private cache. This includes picker documents: snapshots keep the streamed
+length and bytes stable across retries. Workers therefore do not depend on
+temporary grants or retain persistable URI permissions.
 These copies are the user's own selected plaintext, not decrypted received files.
 Dismissal/removal deletes unqueued copies; confirmed enqueue transfers ownership
 to the worker, which deletes them on success or terminal failure and retains them
@@ -279,14 +279,19 @@ on retry. Failed enqueue restores the draft's snapshots.
 Upload work metadata is authenticated ciphertext wrapped with the existing
 Keystore key in `noBackupFilesDir`; WorkManager receives only a random spool id.
 `UploadWorker` compares `FileCrypto.ciphertextSize` against `/api/me`'s
-`limits.maxFileBytes` before reserving, then reserves, stream-encrypts a known-length
-OkHttp request body to the existing direct/proxy transfer target, and posts the
-encrypted push. It persists the uploaded file id before POST, so a lost response
-retries the identical full push request without another reservation or PUT.
+`limits.maxFileBytes` before reserving. Each new reservation gets a fresh file key
+and push-envelope nonce, with the new key and envelope atomically persisted before
+the streaming PUT. A failed PUT can therefore retry under a different file id
+without reusing AES-GCM nonces with the same key and different file-id AAD.
+After PUT succeeds, it persists the uploaded file id before POST, so a lost POST
+response retries the identical full push request without another reservation,
+file key, envelope, or PUT.
 Work is expedited where quota allows and uses a `dataSync` foreground notification
 on the low-importance `transfers` channel. Network I/O, 429 and 5xx retry with
 WorkManager backoff; other 4xx, changed sessions, and unreadable spools/sources
 fail terminally. Progress/fixed errors contain no payloads, credentials or keys.
+The API 34+ `FOREGROUND_SERVICE_DATA_SYNC` permission is recorded in
+[ADR 0003](../../docs/adr/0003-android-transfer-foreground-permission.md) and SPEC §14.2.
 
 Downloads occur only after an explicit action. `DownloadWorker` resolves the file
 target, streams GET through `FileCrypto`, and writes only to
@@ -303,11 +308,16 @@ Generic or wildcard MIME types use the saved display-name extension for Open/Sha
 explicit MIME types take precedence. This lookup stays in memory and lets an
 `application/octet-stream` PNG from dev-client open in an installed image viewer.
 
-JVM worker tests use `WorkManagerTestInitHelper` and MockWebServer for direct/proxy
-requests, upload round trips at 0 B, 1 B, 65,536 B and 1 MiB, downloaded bytes,
-tampering/partial cleanup, network retry, session mismatch and lost-POST-response
-idempotency. `androidx.work:work-testing` is the only added dependency, pinned to
-the existing WorkManager `2.12.0`.
+JVM worker tests use `WorkManagerTestInitHelper` and MockWebServer for exact
+direct/proxy paths, upload round trips at 0 B, 1 B, 65,536 B and 1 MiB, fresh keys
+and matching envelopes after failed PUTs, unchanged requests after lost POST
+responses, and downloaded bytes. Download regressions require bulk destination
+writes without scalar writes and exercise real API 28 collision-safe files.
+Scheduler tests cover ciphertext limits before enqueue, omitted blank fields, and
+first-file-only captions. Home tests cover file-only sends, retryable drafts,
+snapshot replacement/removal, and ownership through enqueue and ViewModel cleanup.
+Tampering/partial cleanup, network retry, and session mismatch remain covered.
+`androidx.work:work-testing` is pinned to the existing WorkManager `2.12.0`.
 
 
 

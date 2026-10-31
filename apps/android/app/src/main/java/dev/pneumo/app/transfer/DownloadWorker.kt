@@ -16,7 +16,6 @@ import dev.pneumo.app.protocol.GetFileResponse
 import dev.pneumo.app.sync.DecryptedPush
 import java.io.EOFException
 import java.io.FilterInputStream
-import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -399,15 +398,15 @@ private class ProgressNetworkInputStream(
     }
 }
 
-private class StorageOutputStream(output: OutputStream) : FilterOutputStream(output) {
-    override fun write(value: Int) = storageWrite { super.write(value) }
+private class StorageOutputStream(private val output: OutputStream) : OutputStream() {
+    override fun write(value: Int) = storageWrite { output.write(value) }
 
     override fun write(buffer: ByteArray, offset: Int, length: Int) =
-        storageWrite { super.write(buffer, offset, length) }
+        storageWrite { output.write(buffer, offset, length) }
 
-    override fun flush() = storageWrite { super.flush() }
+    override fun flush() = storageWrite { output.flush() }
 
-    override fun close() = storageWrite { super.close() }
+    override fun close() = storageWrite { output.close() }
 
     private inline fun storageWrite(write: () -> Unit) {
         try {
