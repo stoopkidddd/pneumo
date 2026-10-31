@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Android and IDEs
+.gradle/
+.idea/
+*.iml
+apps/android/local.properties
+*.jks
+*.keystore
+
+# Test output
+playwright-report/
+test-results/
+
+# Local env (fake dev values only, but never committed)
+.env.local
+.env.*.local
+
+# Agent working files
+.claude/worktrees/
+.claude/runs/
+.claude/settings.local.json
+
+.DS_Store

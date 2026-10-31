@@ -1,0 +1,12 @@
+[tools]
+node = "26"
+pnpm = "11.28.10"
+java = "temurin-17"
+
+[env]
+_.file = { path = ".env.local", redact = true }
+ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
+
+[tasks.check]
+description = "Run every lane check"
+run = "echo 'no checks yet'"
