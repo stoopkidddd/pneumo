@@ -1,7 +1,29 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.roborazzi)
+}
+
+abstract class SharedFixtureSync : Sync() {
+    @get:OutputDirectory
+    abstract val fixtureDirectory: DirectoryProperty
+}
+
+val syncSharedFixtures = tasks.register<SharedFixtureSync>("syncSharedFixtures") {
+    fixtureDirectory.set(layout.buildDirectory.dir("generated/sharedFixtures"))
+    from(rootProject.file("../../packages/crypto/vectors")) {
+        include("*.json")
+        into("crypto/vectors")
+    }
+    from(rootProject.file("../../packages/protocol/fixtures")) {
+        into("protocol/fixtures")
+    }
+    into(fixtureDirectory)
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(syncSharedFixtures)
 }
 
 android {
@@ -60,6 +82,12 @@ android {
     }
 }
 
+androidComponents.onVariants { variant ->
+    variant.hostTests.values.forEach { test ->
+        test.sources.resources?.addGeneratedSourceDirectory(syncSharedFixtures) { it.fixtureDirectory }
+    }
+}
+
 kotlin {
     jvmToolchain(17)
 }
@@ -77,6 +105,10 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.serialization.json)
+    implementation(libs.okhttp)
+    implementation(libs.datastore.preferences)
+    implementation(libs.coroutines.core)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
@@ -87,6 +119,7 @@ dependencies {
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.turbine)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockwebserver)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.ext.junit)
