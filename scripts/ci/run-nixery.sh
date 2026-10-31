@@ -10,15 +10,18 @@ if [[ "$(uname -sm)" == "Linux x86_64" && -d /nix/store ]]; then
     mkdir -p /lib64
     ln -s "$loader" /lib64/ld-linux-x86-64.so.2
   fi
-  # Keep store paths: custom-registry libraries need not be linked into /lib.
-  libraries=$(patchelf --print-rpath "$runtime")
+  # The loader finds its own libc; only GCC runtime libraries go on the search path.
+  # A glibc directory there breaks base-image tools built against another glibc.
+  libraries=""
   for directory in /nix/store/*-gcc-*-lib/lib; do
     if [[ -f "$directory/libgcc_s.so.1" ]]; then
       libraries="${libraries:+$libraries:}$directory"
     fi
   done
-  LD_LIBRARY_PATH="$(dirname "$loader")${libraries:+:$libraries}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  export LD_LIBRARY_PATH
+  if [[ -n "$libraries" ]]; then
+    LD_LIBRARY_PATH="$libraries${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH
+  fi
 fi
 
 if [[ -n "${JAVA_HOME:-}" ]]; then
