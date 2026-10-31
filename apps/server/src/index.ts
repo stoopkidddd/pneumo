@@ -16,7 +16,7 @@ try {
     publicUrl: config.PUBLIC_URL,
     logger,
   });
-  const shutdownHooks: ShutdownHook[] = [() => storage.destroy()];
+  const shutdownHooks: ShutdownHook[] = [];
   const app = createApp({
     config,
     logger,

@@ -75,6 +75,7 @@ mode still permits signed PUT/GET when bucket CORS is configured externally.
 and a temporary web fixture. It checks health, HTML serving, safe config failures, and SIGTERM
 shutdown. The shutdown hook list in `src/index.ts` is the registration point for the later
 WebSocket hub; hooks receive close code 1012, with a ten-second drain deadline.
+Storage sockets remain open during the drain; process exit releases them afterward.
 
 The injected `Clock.now()` returns Unix epoch milliseconds, matching `Date.now()`. Tests use
 epoch-millisecond fake clocks so timestamps and expiry calculations share the production unit.
