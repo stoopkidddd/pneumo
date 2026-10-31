@@ -29,7 +29,7 @@ when:
 engine: nixery
 dependencies:
   # Compose validation uses only the client; no Docker daemon or microVM needed.
-  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, docker-client, hadolint, shellcheck, gnutar, zstd]
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, docker-client, hadolint, shellcheck, gnutar, zstd, patchelf, glibc, gcc-unwrapped.lib]
 environment:
   PNPM_HOME: /tangled/workspace/.pnpm
 cache:
@@ -40,12 +40,14 @@ cache:
 steps:
   - name: Install locked dependencies
     command: |
-      node --version
-      pnpm --version
-      pnpm install --frozen-lockfile --store-dir .pnpm-store
+      bash scripts/ci/run-nixery.sh bash -euc '
+        node --version
+        pnpm --version
+        pnpm install --frozen-lockfile --store-dir .pnpm-store
+      '
   - name: check:infra
-    command: bash scripts/ci/check.sh infra
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh infra
   # Keep export/check sequential: it rewrites web and Android generated assets.
-  # Linux PNG reproducibility is pending the first hosted run.
+  # PNG byte identity passed in public amd64 Nixery; hosted result remains pending.
   - name: check:brand
-    command: bash scripts/ci/check.sh brand
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh brand

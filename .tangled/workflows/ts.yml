@@ -22,7 +22,7 @@ when:
 
 engine: nixery
 dependencies:
-  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, python3, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, gnutar, zstd]
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, python3, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, gnutar, zstd, patchelf, glibc, gcc-unwrapped.lib]
 environment:
   # Nixery shares only the workspace between steps, not the home directory.
   PNPM_HOME: /tangled/workspace/.pnpm
@@ -34,13 +34,15 @@ cache:
 steps:
   - name: Install locked dependencies
     command: |
-      node --version
-      pnpm --version
-      python3 --version
-      pnpm install --frozen-lockfile --store-dir .pnpm-store
+      bash scripts/ci/run-nixery.sh bash -euc '
+        node --version
+        pnpm --version
+        python3 --version
+        pnpm install --frozen-lockfile --store-dir .pnpm-store
+      '
   - name: check:protocol
-    command: bash scripts/ci/check.sh protocol
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh protocol
   - name: check:server
-    command: bash scripts/ci/check.sh server
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh server
   - name: check:web
-    command: bash scripts/ci/check.sh web
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh web

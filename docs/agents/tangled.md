@@ -214,7 +214,27 @@ The TS workflow failed during dependency installation, not a lane check:
 | Install locked dependencies | 8 s | Failed: switched pnpm shim could not find `sed` |
 | Total | 37 s | Failed before any lane check |
 
-The install log printed Node v26.13.0. nixpkgs' pnpm switched to the repo-pinned 11.28.10; its shell shim then failed at line 14 (`sed: command not found`) and tried the incorrect module path `/tangled/node_modules/pnpm/bin/pnpm.mjs`. Round two adds the shim's shell utilities explicitly rather than abandoning the pinned version. A successful hosted install and warm timings remain pending.
+The install log printed Node v26.13.0. nixpkgs' pnpm switched to the repo-pinned 11.28.10; its shell shim then failed at line 14 (`sed: command not found`) and tried the incorrect module path `/tangled/node_modules/pnpm/bin/pnpm.mjs`. Round two added the shim's shell utilities rather than abandoning the pinned version. The next hosted run confirmed installation, then exposed the native-loader failure below.
+
+### ENG-277 second hosted lane run and Nixery runtime
+
+After `8b6db55`, all three PR workflows triggered. The pipeline finished **0/3 in 3 m 25 s**:
+
+| Workflow | Hosted total | Relevant stages / failure |
+| -- | -- | -- |
+| `ts.yml` | 48 s | Image pull **8 s**, custom dependencies 28 s, frozen install 12 s passed; protocol failed after 1 s starting Biome |
+| `infra.yml` | 52 s | Compose config and shellcheck passed; Biome failed with the same `spawnSync … ENOENT` |
+| `android.yml` | 1 m 43 s | Image pull **1 m 43 s cold**; `java -version` failed with `java: command not found` |
+
+The hosted TS versions were Node **26.13.0**, pnpm **11.28.10**, and Python **3.14.8**. These failed totals are not successful lane durations or evidence of timeout fit.
+
+Round three reproduced all three failures before editing in disposable `linux/amd64` containers from [public Nixery](https://nixery.dev/). Public Node was 26.10.0 and Python 3.14.7: its default package revision is not identical to the hosted `nixpkgs/nixpkgs-unstable` registry. Baseline container totals including pulls were 164.35 s for TS (exit 255), 114.68 s for infra (exit 255), and 174.22 s for Android (exit 127). OrbStack's amd64 emulator reported the missing loader directly instead of Node's `ENOENT`.
+
+The diagnosis was confirmed with `patchelf`: the Biome 2.6.4 executable exists but requests `/lib64/ld-linux-x86-64.so.2`, absent from the Nixery filesystem. Nix's Node and bash instead encode a glibc interpreter under `/nix/store`. A missing ELF interpreter makes execution fail even when the executable file exists.
+
+`scripts/ci/run-nixery.sh` now wraps **every workflow step**, because Nixery starts a fresh container for each step. On x86-64 Linux with `/nix/store`, it derives the glibc loader from Node (or bash when Node is absent) with `patchelf`; only when the standard loader is missing does it create that symlink inside the container. It exports the matching glibc directory, the executable's Nix rpath, and the store directories containing GCC runtime libraries in `LD_LIBRARY_PATH`. Explicit `glibc` and `gcc-unwrapped.lib` dependencies supply libc, `libgcc_s.so.1`, and `libstdc++.so.6`. Using store paths avoids depending on the public image's `/lib` symlink forest, which custom-registry dependencies need not populate. The wrapper does not patch node_modules, change Biome 2.6.4, or alter the Mac's loader paths.
+
+The original `jdk17` image contains `/lib/openjdk/bin/java`, not `/bin/java`; Java was installed but off `PATH`. Android now requests `jdk17_headless`, sets `JAVA_HOME=/lib/openjdk`, and uses the same wrapper to prepend `$JAVA_HOME/bin` for both steps. `GRADLE_USER_HOME` remains `/tangled/workspace/.gradle`.
 
 ### Scheduling and timeout
 
@@ -235,62 +255,110 @@ The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ENG-277 adds three `nixery` workflows, triggered on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all three workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
 
-| Lane | CI or local-only | Workflow / reason | Local warm check time | Hosted warm duration |
-| -- | -- | -- | -- | -- |
-| pneumo-protocol | CI (pending first run) | `ts.yml`: full `check:protocol`, including the Python crypto cross-check | 8.11 s | Pending lead measurement |
-| pneumo-server | CI (pending first run) | `ts.yml`: full `check:server` | 2.98 s | Pending lead measurement |
-| pneumo-web | CI (pending first run) | `ts.yml`: full `check:web`, including the production build | 4.29 s | Pending lead measurement |
-| pneumo-android | local-only (full lane); static subset CI (pending first run) | `android.yml`: only `spotlessCheck detekt`; SDK 37.2 / build-tools 37.0.0, lint, JVM tests and screenshots remain local | 0.74 s subset; 8.32 s full lane with local SDK | Pending lead measurement (subset only) |
-| pneumo-infra | CI (pending first run) | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | 3.27 s | Pending lead measurement |
-| pneumo-brand | CI (pending first run) | `infra.yml`: full `check:brand`, sequential after infra; Linux PNG byte identity is not yet proven | 2.09 s | Pending lead measurement |
-
-### Local timing evidence, not hosted timings
-
-Measured on 2026-10-31 on darwin-arm64, with Node 26.10.0, pnpm 11.28.10 and Temurin 17.0.20.1. The check commands also passed with no `mise` binary on `PATH`. Local pnpm/Gradle dependency caches were warm; Gradle's normal home was unchanged.
-
-| Workflow group | Local check-step total | Includes | Hosted total |
+| Lane | CI or local-only | Workflow / reason | Hosted warm duration |
 | -- | -- | -- | -- |
-| `ts.yml` | 16.78 s | Frozen install using the local pnpm store, protocol, server, web | 37 s cold, failed install; successful/warm run pending |
-| `infra.yml` | 6.25 s | Frozen install using the local pnpm store, infra, brand | Pending first run and warm-cache rerun |
-| `android.yml` | 0.77 s | Java version, SDK-free static subset | Pending first run and warm-cache rerun |
+| pneumo-protocol | CI (pending first run) | `ts.yml`: full `check:protocol`, including the Python crypto cross-check | Pending lead measurement |
+| pneumo-server | CI (pending first run) | `ts.yml`: full `check:server` | Pending lead measurement |
+| pneumo-web | CI (pending first run) | `ts.yml`: full `check:web`, including the production build | Pending lead measurement |
+| pneumo-android | local-only (full lane); static subset CI (pending first run) | `android.yml`: only `spotlessCheck detekt`; SDK 37.2 / build-tools 37.0.0, lint, JVM tests and screenshots remain local | Pending lead measurement (subset only) |
+| pneumo-infra | CI (pending first run) | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | Pending lead measurement |
+| pneumo-brand | CI (pending first run) | `infra.yml`: full `check:brand`, sequential after infra; PNG byte identity passed in public amd64 Nixery | Pending lead measurement |
 
-These totals exclude Nixery image setup, clone, cache transfer, and the first download into the workflow-specific cache directories. They do not establish the hosted timeout fit. All three workflows can run sequentially; measure the complete pipeline as well as each workflow, because queued time counts toward the unknown timeout.
+“Pending first run” means the first **green hosted** run, not the first trigger or a successful local container run.
 
-An isolated Android copy with no `local.properties`, `ANDROID_HOME` or `ANDROID_SDK_ROOT` ran `spotlessCheck detekt` successfully in 1.04 s, with five tasks executed and no SDK download. That justifies a useful SDK-free workflow without provisioning `androidenv` or accepting SDK licences. The complete local `check:android` also passed; it is still a mandatory local merge check.
+### Reproduce CI locally in Nixery
 
-### Round-two minimal-PATH smoke
+A macOS `env -i`/minimal-PATH smoke is insufficient: it missed the Linux ELF interpreter and Java layout. Use the public registry's default package channel with the same explicit package attributes as the workflow. It is the closest available public equivalent, **not** the hosted custom registry revision. On 2026-10-31 the public images supplied Node 26.10.0, selected pnpm 11.28.10, Python 3.14.7 and headless OpenJDK 17.0.20.1.
 
-Replayed every workflow command sequentially in a disposable copy of the tracked workspace under `env -i`. `PATH` contained only an allowlist of utility symlinks corresponding to declared dependencies, not mise or general system directories. A real Node-based pnpm **11.27.0** launcher switched to **11.28.10**, generated the same shell-shim shape as the hosted failure, and installed the frozen lockfile into an isolated `.pnpm-store`. The inspected shim calls `readlink`, `dirname`, `sed` and `uname` before executing `pnpm.mjs`.
+From a committed checkout, make three disposable clones. Never mount the Mac worktree's node_modules into Linux:
 
-| Workflow / step | Local duration | Exit |
-| -- | -- | -- |
-| TS fresh-cache install | 15.79 s | 0 |
-| `check:protocol` | 9.68 s | 0 |
-| `check:server` | 2.61 s | 0 |
-| `check:web` | 3.71 s | 0 |
-| Infra warm install | 1.43 s | 0 |
-| `check:infra` | 3.07 s | 0 |
-| `check:brand` | 1.92 s | 0 |
-| Android Java version | 0.03 s | 0 |
-| Android `spotlessCheck detekt` | 4.63 s | 0 |
+```sh
+scratch=$(mktemp -d)
+for lane in ts infra android; do
+  git clone --quiet --local --no-hardlinks . "$scratch/$lane"
+done
+TS_COPY="$scratch/ts"
+INFRA_COPY="$scratch/infra"
+ANDROID_COPY="$scratch/android"
 
-Local versions were Node 26.10.0, selected pnpm 11.28.10, Python 3.9.6 and Temurin 17.0.20.1. Android had no SDK configuration and used the unchanged normal Gradle home, not a temporary directory. The smoke used macOS utility implementations; macOS shell default-path lookups and absolute interpreter paths are not isolated by `PATH`, so this is not a NixOS/Linux sandbox or proof of hosted success. The temporary workspace was removed after verification.
+TS_IMAGE=nixery.dev/shell/nodejs_26/pnpm_11/python3/bash/coreutils/gnused/gnugrep/findutils/which/gawk/git/gnutar/zstd/patchelf/glibc/gcc-unwrapped.lib
+INFRA_IMAGE=nixery.dev/shell/nodejs_26/pnpm_11/bash/coreutils/gnused/gnugrep/findutils/which/gawk/git/docker-client/hadolint/shellcheck/gnutar/zstd/patchelf/glibc/gcc-unwrapped.lib
+ANDROID_IMAGE=nixery.dev/shell/jdk17_headless/bash/coreutils/gnused/gnugrep/findutils/which/gawk/git/curl/unzip/gnutar/zstd/patchelf/glibc/gcc-unwrapped.lib
+```
+
+These are the container commands exercised in round three (copy paths are parameters). Each invokes the exact workflow install/check commands with the same environment; the hosted workflows additionally repeat the runtime wrapper for each fresh step container.
+
+```sh
+/usr/bin/time -p docker run --rm --platform linux/amd64 \
+  --name eng277-r3-ts-cache-only \
+  -v "$TS_COPY:/tangled/workspace" -w /tangled/workspace \
+  -e CI=true -e PNPM_HOME=/tangled/workspace/.pnpm \
+  "$TS_IMAGE" bash scripts/ci/run-nixery.sh bash -euc '
+node --version
+pnpm --version
+python3 --version
+pnpm install --frozen-lockfile --store-dir .pnpm-store
+bash scripts/ci/check.sh protocol
+bash scripts/ci/check.sh server
+bash scripts/ci/check.sh web'
+
+/usr/bin/time -p docker run --rm --platform linux/amd64 \
+  --name eng277-r3-infra-cache-only \
+  -v "$INFRA_COPY:/tangled/workspace" -w /tangled/workspace \
+  -e CI=true -e PNPM_HOME=/tangled/workspace/.pnpm \
+  "$INFRA_IMAGE" bash scripts/ci/run-nixery.sh bash -euc '
+node --version
+pnpm --version
+pnpm install --frozen-lockfile --store-dir .pnpm-store
+bash scripts/ci/check.sh infra
+bash scripts/ci/check.sh brand'
+
+/usr/bin/time -p docker run --rm --platform linux/amd64 \
+  --name eng277-r3-android-cache-only \
+  -v "$ANDROID_COPY:/tangled/workspace" -w /tangled/workspace \
+  -e CI=true -e JAVA_HOME=/lib/openjdk \
+  -e GRADLE_USER_HOME=/tangled/workspace/.gradle \
+  "$ANDROID_IMAGE" bash scripts/ci/run-nixery.sh bash -euc '
+java -version
+bash scripts/ci/check.sh android-static'
+```
+
+#### Round-three container results
+
+Measured on 2026-10-31 with Docker's amd64 emulation on the owner's arm64 Mac. The final runs used fresh tracked-file copies and restored only the declared cache paths, with no node_modules, project outputs or Gradle task history. Images were already pulled; these totals include container startup and the full install/check commands, but exclude clone and cache archive transfer.
+
+| Workflow | Final cache-only warm duration | Exit | Exercised result |
+| -- | -- | -- | -- |
+| `ts.yml` | **84.13 s** | **0** | Biome 2.6.4, types, 202 protocol/crypto tests including Python, server/web tests, and Vite's rolldown production build |
+| `infra.yml` | **46.69 s** | **0** | Compose config, shellcheck, Biome, infrastructure types, workflow validation, resvg export; all 40 generated brand outputs match git on Linux |
+| `android.yml` | **34.19 s** | **0** | Headless JDK 17, Gradle 9.8.2, `spotlessCheck detekt`; five tasks executed without an SDK |
+
+The first successful Android container run took **276.34 s including its image pull and cold Gradle/dependency downloads**. The log confirms the wrapper downloaded Gradle 9.8.2, then executed all five static-check tasks. Warm pnpm installs reused all 79 packages with zero package downloads.
+
+An additional container probe hid the public image's `/lib` forest and removed its now-dangling `/lib64` alias. The final store-path-based wrapper still ran Biome 2.6.4, the rolldown Vite build, and the resvg brand check: **exit 0, 17.54 s**. This checks native loading without relying on the public image's library symlinks.
+
+These are **local Nixery measurements, not hosted durations or proof of the hosted timeout fit**. The public package revision differs from Tangled's, and the local containers were emulated. The lead must still measure the complete hosted pipeline, including queued time, and retain the full Android lane as a local merge gate.
+
+
+For a cache-only warm rerun, make fresh clones and restore **only** `.pnpm-store`/`.pnpm` for TS/infra and `.gradle/caches`/`.gradle/wrapper` for Android from the previous copies. Do not carry node_modules, project build outputs, or Gradle project task history across clones. The Gradle home stays at the workflow's workspace path, with no SDK configuration.
+
+Use `--rm` for containers. Remove the disposable copies afterward, and remove only image tags absent before your run. Do not use a Docker prune against other projects.
 
 
 ### Toolchain, caches and validation
 
-* `scripts/ci/check.sh` owns the lane commands; mise tasks and workflows call the same wrapper. Every existing task and the root `check` dependency list remain intact. No workflow runs `mise install` or requires mise.
+* `scripts/ci/check.sh` owns the lane commands; mise tasks and workflows call the same wrapper. CI additionally wraps every step in `scripts/ci/run-nixery.sh` for its loader, native-library and Java environment. Every existing task and the root `check` dependency list remain intact. No workflow runs `mise install` or requires mise.
 * TS and infra use the documented `nixpkgs/nixpkgs-unstable` registry syntax with `nodejs_26` and `pnpm_11`. PR #9 confirmed Node 26.13.0. Node's major matches mise; its exact patch depends on the runner's nixpkgs revision and is printed in the install step.
-* [Upstream `pnpm_11`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/pnpm/default.nix) currently supplies 11.27.0, versus the repo's 11.28.10. Keep pnpm's package-manager version management enabled: the Node-based 11.27.0 launcher successfully selected 11.28.10 and installed the lockfile in the round-two minimal-PATH smoke. `PNPM_HOME` remains inside the cached workspace so the selected version survives fresh Nixery step containers. The next hosted install remains to be checked.
+* [Upstream `pnpm_11`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/pnpm/default.nix) currently supplies 11.27.0, versus the repo's 11.28.10. Keep package-manager version management enabled: both the hosted run and public Nixery containers selected 11.28.10 and installed the lockfile. `PNPM_HOME` remains inside the cached workspace so the selected version survives fresh Nixery step containers.
 * Every pnpm/Gradle workflow explicitly includes bash, coreutils, gnused, gnugrep, findutils, which and gawk. coreutils supplies the shim's `readlink`/`dirname`/`uname`; gnused supplies `sed`. TS also includes `python3` for the vector cross-check. Infra includes git for brand comparisons, `docker-client` (with Compose), shellcheck, and hadolint. There is currently no Dockerfile to lint or build; Docker build checks belong to the Dockerfile issue, not ENG-277.
-* Android adds `jdk17` and curl/unzip for the wrapper and uses the common shell utilities for its `xargs`/`sed` launcher commands. Its explicitly workspace-backed `GRADLE_USER_HOME` is not a temporary directory. Only Gradle's `caches` and `wrapper` directories are archived.
+* Android requests `jdk17_headless`, sets `JAVA_HOME=/lib/openjdk`, and uses curl/unzip plus the common `xargs`/`sed` launcher utilities. The Nixery wrapper exports the JDK bin directory on `PATH`. Its explicitly workspace-backed `GRADLE_USER_HOME` is not a temporary directory. Only Gradle's `caches` and `wrapper` directories are archived.
 * pnpm caches `.pnpm-store` and `.pnpm`, hashed by `pnpm-lock.yaml`. Gradle hashes `apps/android/gradle/libs.versions.toml` and `apps/android/gradle/wrapper/gradle-wrapper.properties`. All entries use `fallback: true`; every image includes `gnutar` and `zstd` for cache archives.
 * `check:infra` parses workflow YAML with `scripts/ci/validate-workflows.ts`. It checks common, trigger/schedule, clone, cache, step and engine-specific key lists from the [Tangled workflow reference](https://tangled.org/docs/spindles/workflows/), including the differing dependency shapes. Registry names, environment variable names and NixOS option maps remain open-ended. This is a supported-key check, not a replacement for spindle validation.
 * A temporary workflow containing unsupported top-level `timeout` made `mise run check:infra` exit 1 with `unsupported key "timeout"`. Removing it restored exit 0. Fifteen throwaway validator scenarios also covered valid engines/schedules, nested unknown keys, dependency shape, duplicate keys, invalid YAML and the acceptance of ignored NixOS options on non-NixOS microVM images.
 
 ### Lead's hosted verification round
 
-1. Push round two and resubmit PR #9; verify all three workflows appear and pass. Record resolved tool versions, cold totals, then a warm-cache rerun with per-lane and per-workflow durations in the tables above. Do not mark a lane confirmed CI until this evidence exists.
+1. Push round three and resubmit PR #9; verify all three workflows pass. Record resolved tool versions, cold totals, then a warm-cache rerun with per-lane and per-workflow durations in the tables above. Do not mark a lane confirmed CI until this evidence exists.
 2. If Linux brand output differs, mark full `check:brand` local-only and remove its CI step; do not re-record generated assets merely to make Linux green. Keep the useful infra workflow.
 3. If any group cannot fit the observed hosted limit (including queue time), mark the affected lane local-only with the measured reason and retain a workflow only for a useful subset.
 4. Push a deliberately failing check commit, observe a red pipeline, then revert it in the next round and observe green. This lead-only acceptance test is separate from the local validator failure proof.
@@ -309,4 +377,6 @@ Local versions were Node 26.10.0, selected pnpm 11.28.10, Python 3.9.6 and Temur
 | The spindle rejects unknown workflow keys. | Use the workflow validation report. |
 | paths filters don't match on pull_request; every PR runs all three workflows. | Omit `paths` from PR conditions; keep a separate path-filtered `push` condition. |
 | A non-main push with `-o verbose-ci` reports `workflow skipped: didn't match trigger push` for every workflow. | Expected: these files parse, but only pushes to `main` trigger them. Resubmit PR #9 to exercise the PR conditions. |
+| Nixery lacks the FHS ELF interpreter requested by npm's native executables. | Wrap each step with `run-nixery.sh` and include `patchelf`, `glibc`, and `gcc-unwrapped.lib`; `ENOENT` does not necessarily mean the binary is absent. |
+| Nixery's JDK is under `/lib/openjdk`, off the default `PATH`. | Set `JAVA_HOME=/lib/openjdk`; the Nixery wrapper prepends its bin directory. |
 | `nixery` steps have no Docker. | Use `microvm`, `image: nixos`, and `virtualisation.docker: true` for Docker. |

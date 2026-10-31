@@ -16,8 +16,9 @@ when:
 
 engine: nixery
 dependencies:
-  nixpkgs: [jdk17, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, curl, unzip, gnutar, zstd]
+  nixpkgs: [jdk17_headless, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, curl, unzip, gnutar, zstd, patchelf, glibc, gcc-unwrapped.lib]
 environment:
+  JAVA_HOME: /lib/openjdk
   # Workspace-backed, restored cache; never point Gradle at a temporary directory.
   GRADLE_USER_HOME: /tangled/workspace/.gradle
 cache:
@@ -29,6 +30,6 @@ cache:
     fallback: true
 steps:
   - name: Java version
-    command: java -version
+    command: bash scripts/ci/run-nixery.sh java -version
   - name: Android SDK-free static checks
-    command: bash scripts/ci/check.sh android-static
+    command: bash scripts/ci/run-nixery.sh bash scripts/ci/check.sh android-static
