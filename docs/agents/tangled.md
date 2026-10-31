@@ -263,10 +263,44 @@ The lane workflows and ENG-278's `e2e.yml` trigger on `push` to `main` and `pull
 | pneumo-android | **local-only** (full lane); static subset in CI | `android.yml`: only `spotlessCheck detekt`. The hosted spindle has no Android SDK (37.2 / build-tools 37.0.0), so lint, JVM tests and screenshots stay local. Run `mise run check:android` before merging any Android change. | workflow 51 s (Gradle step 41 s, including the Gradle 9.8.2 download) |
 | pneumo-infra | CI | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | step 3 s |
 | pneumo-brand | CI | `infra.yml`: full `check:brand`, after infra; all generated outputs matched git on the hosted Linux runner | step 2 s |
-| e2e:server | CI configured; **hosted verification pending** | `e2e.yml`: full server MinIO integration and dev-client smoke suites, native MinIO | Not yet measured on the spindle |
-| e2e:web | CI configured; **hosted verification pending** | `e2e.yml`: full Playwright suite, including PWA specs, with native MinIO and pinned Chromium; two workers, no exclusions | Not yet measured on the spindle |
+| e2e:server | CI | `e2e.yml`: full server MinIO integration and dev-client smoke suites, native MinIO; passed on PR #29 cold and warm | step 8 s cold / 10 s warm; exit 0 in both runs |
+| e2e:web | CI | `e2e.yml`: full Playwright suite, including PWA specs, with native MinIO and pinned Chromium; two workers, no exclusions needed on the hosted spindle | step 52 s cold / 52 s warm; exit 0 in both runs |
 | e2e:docker | **local-only** | microVM Docker is available, but the cold image build plus direct/proxy smoke does not fit the conservative queue-inclusive budget below; run `mise run e2e:docker` before merging Docker/runtime changes | No hosted suite run; engine probe alone was 29 s |
 | e2e:android | **local-only** | Requires the Android SDK and a managed-device emulator; run `mise run e2e:android` locally, one emulator suite at a time | No hosted emulator |
+
+### ENG-278 hosted verification (PR #29)
+
+The lead pushed `d2a8dc3`, opened PR #29, and read these results from the Tangled pipeline pages. Cold pipeline **`3mz7asdbgug22`**, with the pnpm cache empty, passed **4/4** in **6 m 18 s**. Retrying produced warm pipeline **`3mz7b7dehal22`**, which passed **4/4** in **4 m 43 s**.
+
+| Workflow | Cold total (`3mz7asdbgug22`) | Warm total (`3mz7b7dehal22`) |
+| -- | -- | -- |
+| `android.yml` | 1 m 2 s | 20 s |
+| `e2e.yml` | 2 m 38 s | 2 m 17 s |
+| `infra.yml` | 1 m 3 s | 53 s |
+| `ts.yml` | 1 m 34 s | 1 m 11 s |
+| **Reported pipeline total** | **6 m 18 s** | **4 m 43 s** |
+
+The displayed workflow totals sum to **6 m 17 s cold / 4 m 41 s warm**, within **1 s / 2 s** of the reported pipeline totals. These results confirm the established sequential execution, not parallel workflows. The pipeline page lists workflows alphabetically, so it does **not** identify the position in which `e2e.yml` ran. Both pipelines finished without a timeout; the operator's actual timeout value remains unknown. The cold pipeline exceeded the initial 5 m 35 s planning budget below, which was not a hard limit.
+
+`e2e.yml` step durations:
+
+| Step | Cold | Warm |
+| -- | -- | -- |
+| Pull image | 5 s | 2 s |
+| Restore cache | 0 s | 1 s |
+| Configure Nix | 0 s | 0 s |
+| Clone | 1 s | 1 s |
+| Install custom dependencies | 1 m 17 s | 1 m 1 s |
+| Install locked dependencies | 14 s | 9 s |
+| `e2e:server` | 8 s | 10 s |
+| `e2e:web` | 52 s | 52 s |
+| Save cache | 1 s | 1 s |
+
+`ts.yml` showed the same install costs in each run: custom dependencies **1 m 17 s cold / 1 m 1 s warm**, and locked dependencies **14 s cold / 9 s warm**. The hosted install step reported Node **v26.13.0**, pnpm **11.28.10**, `minio RELEASE.2025-10-15T17-29-55Z` and `mc RELEASE.2025-04-16T18-13-26Z`, on **linux/amd64**.
+
+Both e2e steps passed with **exit 0** in both runs. The full web suite included the **PWA specs**; no exclusion was needed. The hosted step log displayed only its first output lines, so hosted test counts were not visible. The local counts below must not be presented as hosted counts.
+
+### ENG-277 hosted lane verification (PR #9)
 
 Measured on PR #9 (first green hosted run, `986b257`, pnpm and Gradle caches empty):
 
@@ -286,7 +320,7 @@ Warm run on PR #9 (`c67c791`, pnpm and Gradle caches restored; pnpm reused 129 p
 | `android.yml` | 45 s | Gradle step (static checks) |
 | **Pipeline** | **2 m 24 s** | Sum of the three workflows. |
 
-"Install custom dependencies" (the Nix packages) takes about 25 s in every Node workflow, warm or cold, and no `cache:` entry covers it.
+On PR #9, "Install custom dependencies" (the Nix packages) took about 25 s in each Node workflow, warm or cold; PR #29 measured 1 m 17 s cold / 1 m 1 s warm in both `e2e.yml` and `ts.yml`. No workflow `cache:` entry covers this step.
 
 **CI can fail (proven):** `37db504` added a test that fails on purpose (`apps/server/src/ci-red.test.ts`). `ts.yml` failed at `check:server` with exit 1, and `infra.yml` and `android.yml` passed. The next round dropped that commit and the pipeline went green again.
 
@@ -312,15 +346,15 @@ The first pinned Linux server run passed 13/17 tests: bundled runtime and CLI su
 
 ### e2e scheduling budget
 
-Assume the new workflow is **fourth**, behind all three existing workflows: **2 m 24 s warm / 2 m 35 s cold** queued before it starts. File-name ordering is not a scheduling guarantee. Combining server and web avoids another approximately 25 s Nix setup plus a second pnpm install; splitting them would increase the last workflow's queue-inclusive duration.
+The initial round-one plan assumed the new workflow would be **fourth**, behind all three existing workflows: **2 m 24 s warm / 2 m 35 s cold** queued before it starts. File-name ordering is not a scheduling guarantee; PR #29's alphabetical listing does not establish the actual queue position. Combining server and web avoids a second Nix setup plus a second pnpm install; splitting them would increase the last workflow's queue-inclusive duration.
 
-**[INFERENCE] First-hosted-run estimates:** allow **105 s warm / 150 s cold** for the combined e2e workflow: 25 s warm / 60 s cold Nix setup, 5 s warm / 15 s cold pnpm install, 12 s server, 58 s web and 5 s clone/cache overhead. The native Linux arm64 probes measured **11.23 s server / 57.39 s web**, with a **14.2 s** cold pnpm install; these are inputs to the estimates, not hosted durations. At worst queue position four, estimated pipeline completion is **249 s warm / 305 s cold**, leaving **86 s / 30 s** against the conservative 335 s budget. Cold headroom is narrow and package/download speed is runner-dependent. The lead must replace these estimates with cold and warm hosted totals, including queued time; if they do not fit, keep the affected suite local-only rather than weakening tests.
+**Historical round-one estimates, superseded by the PR #29 measurements above:** **105 s warm / 150 s cold** for the combined e2e workflow: 25 s warm / 60 s cold Nix setup, 5 s warm / 15 s cold pnpm install, 12 s server, 58 s web and 5 s clone/cache overhead. The native Linux arm64 probes measured **11.23 s server / 57.39 s web**, with a **14.2 s** cold pnpm install; these were inputs to the estimates, not hosted durations. At assumed queue position four, estimated pipeline completion was **249 s warm / 305 s cold**, leaving **86 s / 30 s** against the conservative 335 s planning budget. Actual hosted `e2e.yml` totals were **137 s warm / 158 s cold** and complete pipelines were **283 s warm / 378 s cold**, all passed. The larger measured Nix setup costs replace the earlier assumptions; the true timeout and queue position remain unknown.
 
-Use **5 m 35 s** as a conservative planning budget, not a measured hard timeout. Docker's engine is available, but a separate cold `linux/amd64` BuildKit builder took **269.88 s** for the unchanged full `e2e:docker` suite, including image builds, both upload modes, runtime health, web assets, non-root UID, encrypted file transfer and clean SIGTERM. Adding only the measured **29 s** microVM overhead and the existing warm queue already gives **442.88 s (7 m 23 s)**, before the new e2e workflow or a Docker workflow's Node/pnpm setup. That is not a safe cold fit. The initial arm64 run with existing base-image/build cache took **70.02 s**, which must not be mistaken for a cold hosted duration. Docker stays local-only; tests were not shortened.
+Round-one planning used **5 m 35 s** as a conservative budget, not a measured hard timeout. Docker's engine is available, but a separate cold `linux/amd64` BuildKit builder took **269.88 s** for the unchanged full `e2e:docker` suite, including image builds, both upload modes, runtime health, web assets, non-root UID, encrypted file transfer and clean SIGTERM. Adding only the measured **29 s** microVM overhead and the earlier warm queue already gives **442.88 s (7 m 23 s)**, before the new e2e workflow or a Docker workflow's Node/pnpm setup. That is not a safe cold fit; the two green PR #29 pipelines do not prove capacity for this additional suite. The initial arm64 run with existing base-image/build cache took **70.02 s**, which must not be mistaken for a cold hosted duration. Docker stays local-only; tests were not shortened.
 
 These Docker timings are local, with amd64 emulation for the cold run, not evidence of the spindle's native execution speed or actual timeout. Revisit Docker CI only with a larger confirmed queue-inclusive allowance or pipeline isolation; engine support alone is insufficient.
 
-### ENG-278 local evidence and hosted handoff
+### ENG-278 local smoke evidence
 
 | Local check | Result |
 | -- | -- |
@@ -335,9 +369,9 @@ These Docker timings are local, with amd64 emulation for the cold run, not evide
 
 The arm64 probe used `nixery.dev/arm64/shell/nix`, installing the toolchain and browser components from `885ba4d038f10c3d17d7a92e8c3cc185b99c9158` and MinIO from `ac62194c3917d5f474c1a844b6fd6da2db95077d`, in separate temporary Nix profiles. It supplied the same passwd entry manually because the production wrapper targets the hosted x86-64 runner. Nix sandbox/syscall filtering was disabled only for the disposable local Nix builder, not in the workflow. This verifies native Linux browser packaging and the unchanged full suite without Rosetta, but is not hosted amd64 or queue/timeout proof.
 
-The implementer cannot access hosted CI. The lead must push the branch, open/resubmit the PR, and check that both e2e steps pass. Record cold and warm workflow totals **including their queue position** before marking these rows confirmed CI. The public Nixery revision and local emulation differ from the hosted runner.
+The implementer did not access hosted CI. The lead completed the hosted verification on PR #29 and supplied the cold and warm results recorded above; both e2e rows are now confirmed CI. The public Nixery revision and local emulation differ from the hosted runner, so the local results remain separate evidence.
 
-PWA remains included: the full native Mac and Linux arm64 suites passed, but Chromium push subscriptions require outbound FCM access. If the hosted run proves that unavailable, exclude the affected PWA specs **only in the CI command**, leave tests unchanged, and mark that subset local-only with the observed reason. Do not infer a hosted network failure from the Rosetta crash.
+PWA remains included: the full native Mac and Linux arm64 suites passed locally, and the unchanged PWA specs ran successfully on the hosted spindle in both PR #29 pipelines. No CI exclusion was needed despite the outbound FCM requirement.
 
 ### Reproduce CI locally in Nixery
 
