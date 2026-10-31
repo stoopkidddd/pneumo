@@ -1,0 +1,116 @@
+.devices-surface {
+  max-width: 800px;
+  margin-inline: auto;
+}
+.devices-heading,
+.device-title,
+.device-actions,
+.device-meta,
+.device-presence {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+}
+.devices-heading {
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+.devices-heading h1,
+.device-title h2 {
+  margin: 0;
+}
+.devices-heading button.primary {
+  width: auto;
+}
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2xl) 0;
+  background: var(--color-surface);
+}
+.device-row {
+  display: flex;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  scroll-margin-block: var(--space-xl);
+}
+.device-row:first-child {
+  border-top: 1px solid var(--color-border);
+}
+.device-row.highlighted {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.device-icon {
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-width: 1.6;
+}
+.highlighted .device-icon,
+.device-new {
+  color: var(--color-accent);
+  stroke: var(--color-accent);
+}
+.device-content {
+  flex: 1;
+  min-width: 0;
+}
+.device-title h2 {
+  overflow-wrap: anywhere;
+}
+.device-badge {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+.device-badge,
+.device-new,
+.device-meta {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+.device-meta {
+  color: var(--color-text-muted);
+  margin: var(--space-sm) 0 var(--space-lg);
+}
+.device-presence {
+  gap: var(--space-sm);
+}
+.device-dot {
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+}
+.device-dot.online {
+  color: var(--color-success);
+  background: currentColor;
+}
+.device-actions[hidden] {
+  display: none;
+}
+.device-confirmation p {
+  margin-bottom: var(--space-md);
+}
+.device-content .notice,
+.device-content [role="status"] {
+  margin-block: var(--space-md) 0;
+}
+.device-content .field {
+  margin-bottom: var(--space-md);
+}
+@media (max-width: 480px) {
+  .device-row {
+    padding-inline: var(--space-md);
+    gap: var(--space-md);
+  }
+  .device-meta {
+    gap: var(--space-sm) var(--space-md);
+  }
+}

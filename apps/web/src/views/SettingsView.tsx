@@ -1,16 +1,22 @@
 import type { DeviceDTO } from "@pneumo/protocol";
 import { useState } from "react";
 import { type ApiClient, ApiError } from "../api/client.js";
+import { DeviceNameForm } from "../devices/DeviceNameForm.js";
 import { clear } from "../session/store.js";
 import { ErrorNotice } from "./fields.js";
+import "../devices/devices.css";
 
 export function SettingsView({
   api,
   device,
+  onRename,
+  onSigningOut,
   onSignedOut,
 }: {
   api: ApiClient;
   device: DeviceDTO;
+  onRename: (name: string) => Promise<void>;
+  onSigningOut: (pending: boolean) => void;
   onSignedOut: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -19,6 +25,7 @@ export function SettingsView({
     if (busy) return;
     setBusy(true);
     setError(null);
+    onSigningOut(true);
     try {
       await api.request("deleteDevice", { params: { id: device.id } });
       await clear();
@@ -28,16 +35,13 @@ export function SettingsView({
       setError("Could not sign out. Check your connection and try again.");
     } finally {
       setBusy(false);
+      onSigningOut(false);
     }
   }
   return (
     <section className="settings-surface" aria-labelledby="settings-title">
       <h1 id="settings-title">Settings</h1>
-      <div className="field">
-        <label htmlFor="current-device">Device name</label>
-        <input id="current-device" value={device.name} readOnly />
-        <p className="field-help">This browser's name. Renaming is not available here yet.</p>
-      </div>
+      <DeviceNameForm name={device.name} onSave={onRename} />
       <div className="signout-section">
         <h2>Sign out of this browser</h2>
         <p className="muted">

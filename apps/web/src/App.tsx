@@ -1,6 +1,7 @@
 import type { DeviceDTO } from "@pneumo/protocol";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, createApiClient } from "./api/client.js";
+import { DevicesView } from "./devices/DevicesView.js";
 import { HomeView } from "./home/HomeView.js";
 import { useHome } from "./home/useHome.js";
 import { Link } from "./Link.js";
@@ -23,20 +24,48 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const unauthorized = useCallback(async () => {
-    await clear();
-    setSession((current) => {
-      current?.mk.fill(0);
-      return null;
-    });
-    setDevice(null);
-    if (window.location.pathname !== "/login") {
-      setMessage("Your session is no longer valid. Sign in again.");
-    }
-    navigate("/login");
-  }, []);
+  const signingOut = useRef(false);
+  const unauthorized = useCallback(
+    async (reason = "Your session is no longer valid. Sign in again.") => {
+      await clear();
+      setSession((current) => {
+        current?.mk.fill(0);
+        return null;
+      });
+      setDevice(null);
+      if (window.location.pathname !== "/login") {
+        setMessage(signingOut.current ? "You have signed out of this browser." : reason);
+      }
+      navigate("/login");
+    },
+    [],
+  );
   const [api] = useState(() => createApiClient({ onUnauthorized: unauthorized }));
-  const home = useHome(api, session, unauthorized);
+  const removed = useCallback(() => {
+    void unauthorized("This browser was removed from Pneumo.");
+  }, [unauthorized]);
+  const home = useHome(api, session, removed);
+  const currentDevice = home.devices.find((item) => item.id === session?.deviceId) ?? device;
+
+  const signedOut = () => {
+    session?.mk.fill(0);
+    setSession(null);
+    setDevice(null);
+    setMessage("You have signed out of this browser.");
+    navigate("/login");
+  };
+
+  async function removeSelf() {
+    if (!session) return;
+    signingOut.current = true;
+    try {
+      await api.request("deleteDevice", { params: { id: session.deviceId } });
+      await clear();
+      signedOut();
+    } finally {
+      signingOut.current = false;
+    }
+  }
 
   useEffect(() => {
     const changed = () => setPath(window.location.pathname);
@@ -142,6 +171,7 @@ export function App() {
             api={api}
             message={message}
             onSignedIn={(next, nextDevice) => {
+              signingOut.current = false;
               setSession(next);
               setDevice(nextDevice);
               setInitialized(true);
@@ -152,19 +182,15 @@ export function App() {
         ) : path === "/settings" ? (
           <SettingsView
             api={api}
-            device={device}
-            onSignedOut={() => {
-              session.mk.fill(0);
-              setSession(null);
-              setDevice(null);
-              setMessage("You have signed out of this browser.");
-              navigate("/login");
+            device={currentDevice ?? device}
+            onRename={(name) => home.renameDevice(session.deviceId, name)}
+            onSigningOut={(pending) => {
+              signingOut.current = pending;
             }}
+            onSignedOut={signedOut}
           />
         ) : path === "/devices" ? (
-          <section className="empty-state">
-            <h1>Devices</h1>
-          </section>
+          <DevicesView api={api} session={session} state={home} onRemoveSelf={removeSelf} />
         ) : (
           <HomeView state={home} />
         )}

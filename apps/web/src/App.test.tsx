@@ -102,7 +102,6 @@ test("settings reads the current device name from the authenticated server", asy
   render(<App />);
   const name = (await screen.findByLabelText("Device name")) as HTMLInputElement;
   expect(name.value).toBe("Office browser");
-  expect(name.readOnly).toBe(true);
 });
 
 test("revoked stored token clears persisted keys and opens login with a message", async () => {

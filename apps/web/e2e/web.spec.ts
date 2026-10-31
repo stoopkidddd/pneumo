@@ -165,7 +165,6 @@ test("setup acknowledgment opens the accessible application shell", async ({ pag
 
   await page.getByText("Settings", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByLabel("Device name", { exact: true })).toHaveAttribute("readonly", "");
   await assertAccessible(page);
   await captureView(page, "settings");
 });

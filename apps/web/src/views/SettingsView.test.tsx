@@ -39,7 +39,15 @@ test("sign out waits for device revocation and local deletion before leaving Set
   storage.clear.mockReturnValue(cleared.promise);
   const api = createApiClient({ onUnauthorized: vi.fn() });
   const signedOut = vi.fn();
-  render(<SettingsView api={api} device={device} onSignedOut={signedOut} />);
+  render(
+    <SettingsView
+      api={api}
+      device={device}
+      onRename={vi.fn()}
+      onSigningOut={vi.fn()}
+      onSignedOut={signedOut}
+    />,
+  );
   const button = screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement;
 
   fireEvent.click(button);
@@ -67,7 +75,15 @@ test("a failed revocation retains local credentials and permits another sign-out
   fetchMock.mockRejectedValue(new TypeError("Offline"));
   const api = createApiClient({ onUnauthorized: vi.fn() });
   const signedOut = vi.fn();
-  render(<SettingsView api={api} device={device} onSignedOut={signedOut} />);
+  render(
+    <SettingsView
+      api={api}
+      device={device}
+      onRename={vi.fn()}
+      onSigningOut={vi.fn()}
+      onSignedOut={signedOut}
+    />,
+  );
   const button = screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement;
 
   fireEvent.click(button);
@@ -86,7 +102,15 @@ test("a 401 uses the global session handler without a misleading local error or 
   const unauthorized = vi.fn();
   const api = createApiClient({ onUnauthorized: unauthorized });
   const signedOut = vi.fn();
-  render(<SettingsView api={api} device={device} onSignedOut={signedOut} />);
+  render(
+    <SettingsView
+      api={api}
+      device={device}
+      onRename={vi.fn()}
+      onSigningOut={vi.fn()}
+      onSignedOut={signedOut}
+    />,
+  );
   const button = screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement;
 
   fireEvent.click(button);

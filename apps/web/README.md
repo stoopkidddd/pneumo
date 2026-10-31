@@ -1,6 +1,6 @@
 # Web app shell
 
-The React app uses the generated Switchboard tokens, bundled Chivo and Public Sans fonts, and the approved brand vectors. Theme follows `prefers-color-scheme`; keyboard controls use the brand focus ring. Home supports encrypted notes and links. Devices remains a route shell.
+The React app uses the generated Switchboard tokens, bundled Chivo and Public Sans fonts, and the approved brand vectors. Theme follows `prefers-color-scheme`; keyboard controls use the brand focus ring. Home supports encrypted notes and links. Devices lists and manages paired devices and adds phones through a pairing QR code.
 
 Internal links use `Link` to push browser history without reloading the document or re-running session bootstrap. Back and Forward update the route through `popstate`; guard redirects replace the current history entry. Modified clicks, new-tab targets, downloads, and external links retain native browser behavior.
 
@@ -10,7 +10,7 @@ Internal links use `Link` to push browser history without reloading the document
 - Open the server-provided setup link with its `#token=` fragment. The app captures the token and removes the fragment from browser history. Setup checks at least 12 NFC-normalized Unicode characters and a matching normalized confirmation.
 - All derivation uses `@pneumo/crypto`. The passphrase stays local. Setup generates the protocol KDF parameters; login fetches the existing parameters. Derivation disables the form and announces its busy state.
 - Setup keeps the new session in memory until the owner acknowledges the recovery warning. Acknowledgment saves it and opens Home.
-- `src/session/store.ts` exports `Session`, `load`, `save`, and `clear`. IndexedDB database `pneumo`, store `session`, key `current` holds `{ deviceId, token, mk, contentKey }`. MK is raw bytes for future pairing; the content key is a structured-cloned, non-extractable AES-GCM `CryptoKey`. Writes finish only after transaction commit.
+- `src/session/store.ts` exports `Session`, `load`, `save`, and `clear`. IndexedDB database `pneumo`, store `session`, key `current` holds `{ deviceId, token, mk, contentKey }`. MK is raw bytes for pairing QR generation; the content key is a structured-cloned, non-extractable AES-GCM `CryptoKey`. Writes finish only after transaction commit.
 - Settings deletes the current device before clearing the local session. A server 401 clears the session and opens login; wrong-passphrase login failures keep their specific message. Rate-limit messages round `Retry-After` seconds up to minutes.
 
 ## Home and live history
@@ -22,6 +22,15 @@ Internal links use `Link` to push browser history without reloading the document
 - `src/live/ws.ts` stays connected across protected routes. It validates protocol frames, replies to ping, watches 135 seconds of silence, and reconnects with full jitter or immediately on network/visibility restoration. A 4401 close clears the session and opens login with a message.
 - The cursor advances synchronously for each received push, before decryption. Resync replaces the current page while retaining pending sends and live arrivals; deletion tombstones reject delayed results. Reconnection also refreshes history and devices to catch missed deletions and presence changes.
 - Offline mode retains already loaded history in memory; it does not queue sends or persist a history cache. HTTP failures offer an inline retry. Files, PWA, and notifications remain outside this issue.
+
+## Devices and phone pairing
+
+- `/devices` shows platform icons, the current-browser badge, online/offline status, and relative last-seen times. Rename and confirmed removal happen inline. Settings uses the same name editor for this browser. Removing this browser revokes its device and clears local keys, just like signing out.
+- `useHome` already lives in the shell across protected routes; Devices and Settings reuse its device list and its single WebSocket. The device reducer merges `device_added`, `device_updated`, and `device_removed` frames without allowing an in-flight list response to undo newer changes.
+- A remotely revoked browser receives 4401 and opens `/login` with “This browser was removed from Pneumo.” Intentional removal and sign-out keep the ordinary signed-out message.
+- **Add a phone** requests a single-use, ten-minute code and passes the current origin, code, and session MK to `buildPairingUri`. `qrcode` draws it on a canvas with error correction M. The URI never enters DOM text, attributes, links, the clipboard, or logs.
+- The modal counts down to the server's expiry. **New code** immediately wipes the previous QR; expiry hides and wipes it too. Close and Escape return focus to **Add a phone**. A `device_added` frame created after the active code closes the modal and highlights the new row; list refreshes and presence updates do not complete pairing. Creation time comes from the server expiry minus ten minutes, avoiding client/server clock differences in event ordering.
+- Vitest covers device-event reconciliation, name-edit recovery, countdown, expiry, regeneration, and stale async responses. Playwright decodes the actual canvas with `jsQR`, verifies its origin and MK in memory, and claims the code through the real API. It also covers rename persistence, cross-browser revocation, self-removal, focus restoration, and axe scans.
 
 ## API client
 
@@ -53,3 +62,5 @@ Playwright global setup builds both apps, starts isolated MinIO through `scripts
 The suite covers setup, second-browser login, persisted-key decryption, sign-out/re-login, authentication failures, revocation, client-side Back/Forward, connection recovery, and axe scans. Home adds real two-context delivery within two seconds, targeted pushes in both histories, clipboard/Open actions, inline deletion, encrypted-size limits, draft recovery, keyboard focus after sending, decryption failures, pagination, and deep-link focus. The offline replay test closes both sides of a real WebSocket proxy, checks the replacement hello cursor, and requires the missed push frame between `ready` and `replay_done`; HTTP refresh alone cannot satisfy it. Vitest covers composer interactions, history transitions, and the WebSocket lifecycle with fake sockets and timers.
 
 Light/dark Home captures are `home-{empty,items,offline,error}-{light,dark}.png`, with corresponding `home-{empty,items,offline,error}-mobile.png` captures, under `test-results/screens/`. Keyboard-focus captures preserve Message focus after sending: `home-send-{success,error}-focus-{light,dark}.png` and `home-send-{success,error}-focus-mobile.png`. Existing shell captures remain there too. Screenshots are not committed. Traces, video, and automatic failure screenshots are disabled so credentials and session state do not enter artifacts.
+
+Devices captures are `devices-{list,rename,remove-confirm,pairing,paired,revoked-login,self-removed-login}-{light,dark,mobile}.png`; editable Settings captures are `settings-device-name-{light,dark,mobile}.png`. All are under `test-results/screens/` and remain uncommitted. Pairing captures contain only throwaway test-instance QR images, never the raw URI.

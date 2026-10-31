@@ -8,6 +8,7 @@ import {
 } from "@pneumo/protocol";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { type ApiClient, ApiError } from "../api/client.js";
+import { deviceReducer, emptyDevices } from "../devices/reducer.js";
 import {
   comparePushes,
   emptyHistory,
@@ -23,11 +24,14 @@ type HomeActions = {
   send: (payload: PushPayload, target: string | null) => Promise<void>;
   remove: (id: string) => Promise<void>;
   find: (id: string) => Promise<void>;
+  renameDevice: (id: string, name: string) => Promise<void>;
+  removeDevice: (id: string) => Promise<void>;
 };
 
 export type HomeState = HomeActions & {
   items: HistoryItem[];
   devices: DeviceDTO[];
+  lastAddedDevice: DeviceDTO | null;
   maxEnvelopeBytes: number;
   loading: boolean;
   loadingMore: boolean;
@@ -45,7 +49,7 @@ export function useHome(
   const [history, dispatch] = useReducer(historyReducer, emptyHistory);
   const historyRef = useRef(history);
   historyRef.current = history;
-  const [devices, setDevices] = useState<DeviceDTO[]>([]);
+  const [deviceState, dispatchDevice] = useReducer(deviceReducer, emptyDevices);
   const [maxEnvelopeBytes, setMaxEnvelopeBytes] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -70,12 +74,21 @@ export function useHome(
       find: async (id) => {
         await actions.current?.find(id);
       },
+      renameDevice: async (id, name) => {
+        if (!actions.current) throw new Error("Sign in again before renaming.");
+        await actions.current.renameDevice(id, name);
+      },
+      removeDevice: async (id) => {
+        if (!actions.current) throw new Error("Sign in again before removing.");
+        await actions.current.removeDevice(id);
+      },
     }),
     [],
   );
 
   useEffect(() => {
     dispatch({ type: "clear" });
+    dispatchDevice({ type: "clear" });
     if (!session) return;
     let active = true;
     let newest: PushDTO | null = null;
@@ -112,6 +125,7 @@ export function useHome(
       const selected = new URLSearchParams(window.location.search).get("push");
       if (selected) startedWith.delete(selected);
       const revision = pushRevision;
+      dispatchDevice({ type: "refresh" });
       refreshing = (async () => {
         try {
           const [page, listed, me] = await Promise.all([
@@ -127,7 +141,7 @@ export function useHome(
           }
           for (const push of page.pushes) remember(push);
           dispatch({ type: "replace", items, startedWith });
-          setDevices(listed.devices);
+          dispatchDevice({ type: "replace", devices: listed.devices });
           setMaxEnvelopeBytes(me.limits.maxEnvelopeBytes);
           before = page.nextBefore;
           setNextBefore(before);
@@ -161,12 +175,9 @@ export function useHome(
         }
         dispatch({ type: "delete", id: frame.id });
       } else if (frame.type === "device_added" || frame.type === "device_updated") {
-        setDevices((current) => [
-          ...current.filter((device) => device.id !== frame.device.id),
-          frame.device,
-        ]);
+        dispatchDevice(frame);
       } else if (frame.type === "device_removed") {
-        setDevices((current) => current.filter((device) => device.id !== frame.id));
+        dispatchDevice(frame);
       } else if (frame.type === "replay_done") {
         setLive("connected");
         // Reconcile missed deletions and the empty-history/hello race as well as replayed pushes.
@@ -261,6 +272,18 @@ export function useHome(
         const item = await decode(push);
         if (active) dispatch({ type: "merge", items: [item] });
       },
+      renameDevice: async (id, name) => {
+        const device = await api.request("updateDevice", {
+          params: { id },
+          body: { name },
+          signal,
+        });
+        if (active) dispatchDevice({ type: "device_updated", device });
+      },
+      removeDevice: async (id) => {
+        await api.request("deleteDevice", { params: { id }, signal });
+        if (active) dispatchDevice({ type: "device_removed", id });
+      },
     };
     const onlineChanged = () => setOffline(!navigator.onLine);
     window.addEventListener("online", onlineChanged);
@@ -278,7 +301,8 @@ export function useHome(
 
   return {
     items: history.items,
-    devices,
+    devices: deviceState.devices,
+    lastAddedDevice: deviceState.lastAddedDevice,
     maxEnvelopeBytes,
     loading,
     loadingMore,
