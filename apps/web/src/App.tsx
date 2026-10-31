@@ -1,6 +1,8 @@
 import type { DeviceDTO } from "@pneumo/protocol";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, createApiClient } from "./api/client.js";
+import { HomeView } from "./home/HomeView.js";
+import { useHome } from "./home/useHome.js";
 import { Link } from "./Link.js";
 import { clear, load, type Session } from "./session/store.js";
 import { AuthView } from "./views/AuthView.js";
@@ -21,18 +23,20 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [api] = useState(() =>
-    createApiClient({
-      onUnauthorized: async () => {
-        setSession(null);
-        setDevice(null);
-        if (window.location.pathname !== "/login") {
-          setMessage("Your session is no longer valid. Sign in again.");
-        }
-        navigate("/login");
-      },
-    }),
-  );
+  const unauthorized = useCallback(async () => {
+    await clear();
+    setSession((current) => {
+      current?.mk.fill(0);
+      return null;
+    });
+    setDevice(null);
+    if (window.location.pathname !== "/login") {
+      setMessage("Your session is no longer valid. Sign in again.");
+    }
+    navigate("/login");
+  }, []);
+  const [api] = useState(() => createApiClient({ onUnauthorized: unauthorized }));
+  const home = useHome(api, session, unauthorized);
 
   useEffect(() => {
     const changed = () => setPath(window.location.pathname);
@@ -157,13 +161,12 @@ export function App() {
               navigate("/login");
             }}
           />
-        ) : (
+        ) : path === "/devices" ? (
           <section className="empty-state">
-            <h1>{path === "/devices" ? "Devices" : "Home"}</h1>
-            {path !== "/devices" && (
-              <p className="muted">This browser is connected to your Pneumo instance.</p>
-            )}
+            <h1>Devices</h1>
           </section>
+        ) : (
+          <HomeView state={home} />
         )}
       </main>
     </>

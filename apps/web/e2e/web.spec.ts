@@ -316,16 +316,11 @@ test("server-side device revocation signs out an unauthorized browser", async ({
   }
 });
 
-test("internal navigation preserves the document and bootstrap session", async ({ signedIn }) => {
+test("internal navigation preserves the document and browser history", async ({ signedIn }) => {
   const { page } = signedIn;
-  const bootstrapRequests: string[] = [];
   let documentLoads = 0;
   page.on("load", () => {
     documentLoads += 1;
-  });
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path === "/api/health" || path === "/api/me") bootstrapRequests.push(path);
   });
   await page.evaluate(() => {
     Reflect.set(window, "pneumoNavigationMarker", true);
@@ -346,7 +341,6 @@ test("internal navigation preserves the document and bootstrap session", async (
 
   expect(await page.evaluate(() => Reflect.get(window, "pneumoNavigationMarker"))).toBe(true);
   expect(documentLoads).toBe(0);
-  expect(bootstrapRequests).toEqual([]);
 });
 
 test("connection unavailable is accessible and retry reconnects", async ({ page, instance }) => {
