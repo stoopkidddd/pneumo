@@ -142,6 +142,7 @@ describe("bearer-protected device routes", () => {
 
   test("GET /me satisfies the full client contract without exposing stored secrets", async () => {
     const target = await initializedFixture();
+    target.devices.setOnline(target.owner.device.id, true);
     const response = await target.app.request("/api/me", {
       headers: authorization(target.owner.token),
     });
@@ -151,6 +152,7 @@ describe("bearer-protected device routes", () => {
     expect(parsed.vapidPublicKey).toBe(target.vapidKeys.publicKey);
     expect(JSON.stringify(body).includes(target.vapidKeys.privateKey)).toBe(false);
     expect(parsed.keyCheck === setupRequest.keyCheck).toBe(true);
+    expect(parsed.device.online).toBe(true);
     expect(parsed.limits).toEqual({ maxFileBytes: 123456, maxEnvelopeBytes: 54321 });
     expect(parsed.uploadMode).toBe("proxy");
     expect(hasInternalDeviceFields(body)).toBe(false);
@@ -166,17 +168,27 @@ describe("bearer-protected device routes", () => {
       }),
     );
     const other = LoginResponse.parse(await loginResponse.json());
+    const updated: DeviceDTO[] = [];
+    target.events.on("device_updated", ({ device }) => updated.push(device));
+    target.devices.setOnline(target.owner.device.id, true);
 
     const ownerRename = await target.app.request(
       `/api/devices/${target.owner.device.id}`,
       json("PATCH", { name: "Primary browser", extra: "stripped" }, target.owner.token),
     );
-    expect(DeviceDTO.parse(await ownerRename.json()).name).toBe("Primary browser");
+    const renamedOwner = DeviceDTO.parse(await ownerRename.json());
+    expect(renamedOwner.name).toBe("Primary browser");
+    expect(renamedOwner.online).toBe(true);
+    target.devices.setOnline(other.device.id, true);
     const otherRename = await target.app.request(
       `/api/devices/${other.device.id}`,
       json("PATCH", { name: "Automation CLI" }, target.owner.token),
     );
-    expect(DeviceDTO.parse(await otherRename.json()).name).toBe("Automation CLI");
+    const renamedOther = DeviceDTO.parse(await otherRename.json());
+    expect(renamedOther.name).toBe("Automation CLI");
+    expect(renamedOther.online).toBe(true);
+    expect(updated).toEqual([renamedOwner, renamedOther]);
+    target.devices.setOnline(other.device.id, false);
 
     const listResponse = await target.app.request("/api/devices", {
       headers: authorization(target.owner.token),
@@ -186,6 +198,10 @@ describe("bearer-protected device routes", () => {
       "Automation CLI",
       "Primary browser",
     ]);
+    expect(Object.fromEntries(list.devices.map((device) => [device.name, device.online]))).toEqual({
+      "Automation CLI": false,
+      "Primary browser": true,
+    });
     expect(hasInternalDeviceFields(list)).toBe(false);
   });
 

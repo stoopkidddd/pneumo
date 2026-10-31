@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
+import { on, once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,10 +12,14 @@ import {
   ListDevicesResponse,
   LoginResponse,
   MeResponse,
+  PushDTO,
+  ServerFrame,
   type SetupRequest,
   SetupResponse,
+  uuidv7,
 } from "@pneumo/protocol";
 import { afterAll, beforeAll, expect, inject, test } from "vitest";
+import { WebSocket } from "ws";
 import packageJson from "../../package.json" with { type: "json" };
 import { type Clock, createApp } from "../app.js";
 import { loadConfig } from "../config.js";
@@ -290,11 +294,37 @@ async function requestJson(origin: string, path: string, body: unknown, token?: 
   });
 }
 
-test("bundled runtime serves the changed auth and pairing paths and reloads MinIO state", async () => {
+test("bundled runtime serves auth, pairing and WebSocket delivery and reloads MinIO state", async () => {
   const prefix = randomPrefix("runtime");
   const cleanup = new S3Storage(s3Config(prefix));
   let child: ChildProcess | undefined;
   let restarted: ChildProcess | undefined;
+  const sockets = new Set<WebSocket>();
+  async function connect(port: number, token: string, since: string | null = null) {
+    const socket = new WebSocket(`ws://localhost:${port}/api/ws`);
+    sockets.add(socket);
+    const frames = on(socket, "message");
+    const closed = once(socket, "close");
+    await once(socket, "open");
+    socket.send(
+      JSON.stringify({
+        type: "hello",
+        token,
+        since,
+        client: { platform: "web", version: "0.1.0" },
+      }),
+    );
+    async function next(type: ServerFrame["type"]): Promise<ServerFrame> {
+      while (true) {
+        const item = await frames.next();
+        if (item.done) throw new Error("WebSocket ended before the expected frame");
+        const [data] = item.value;
+        const frame = ServerFrame.parse(JSON.parse(data.toString()));
+        if (frame.type === type) return frame;
+      }
+    }
+    return { socket, next, closed, frames };
+  }
   try {
     child = startRuntime(prefix);
     const running = await runtimePort(child);
@@ -325,6 +355,35 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
     });
     expect(loginResponse.status).toBe(201);
     const second = LoginResponse.parse(await loginResponse.json());
+    const ownerSocket = await connect(running.port, owner.token);
+    expect(await ownerSocket.next("ready")).toMatchObject({ deviceId: owner.device.id });
+    expect(await ownerSocket.next("replay_done")).toEqual({ type: "replay_done" });
+    const firstId = uuidv7();
+    const secondId = uuidv7();
+    for (const id of [firstId, secondId]) {
+      const response = await requestJson(
+        origin,
+        "/api/pushes",
+        {
+          id,
+          targetDeviceId: second.device.id,
+          envelope: {
+            v: 1,
+            n: Buffer.alloc(12, 1).toString("base64url"),
+            c: Buffer.alloc(16, 2).toString("base64url"),
+          },
+          file: null,
+        },
+        owner.token,
+      );
+      expect(response.status).toBe(201);
+      const push = PushDTO.parse(await response.json());
+      expect(await ownerSocket.next("push")).toEqual({ type: "push", push });
+    }
+    const online = ListDevicesResponse.parse(
+      await (await fetch(`${origin}/api/devices`, { headers: bearer(second.token) })).json(),
+    );
+    expect(online.devices.find((device) => device.id === owner.device.id)?.online).toBe(true);
     const meResponse = await fetch(`${origin}/api/me`, { headers: bearer(second.token) });
     expect(meResponse.status).toBe(200);
     const meBody: unknown = await meResponse.json();
@@ -349,11 +408,19 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
       device: { name: "Phone", platform: "android" },
     });
     const phone = ClaimPairResponse.parse(await claimResponse.json());
+    const phoneSocket = await connect(running.port, phone.token);
+    await phoneSocket.next("replay_done");
     const deletion = await fetch(`${origin}/api/devices/${phone.device.id}`, {
       method: "DELETE",
       headers: bearer(owner.token),
     });
     expect(deletion.status).toBe(204);
+    expect(await ownerSocket.next("device_removed")).toEqual({
+      type: "device_removed",
+      id: phone.device.id,
+    });
+    expect((await phoneSocket.closed)[0]).toBe(4401);
+    await phoneSocket.frames.return?.();
     expect((await fetch(`${origin}/api/me`, { headers: bearer(phone.token) })).status).toBe(401);
     expect(running.output().includes(owner.token)).toBe(false);
     expect(running.output().includes(second.token)).toBe(false);
@@ -361,6 +428,8 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
     expect(running.output().includes(vapidKeys.privateKey)).toBe(false);
 
     const [exitCode, exitSignal] = await stopRuntime(child);
+    expect((await ownerSocket.closed)[0]).toBe(1012);
+    await ownerSocket.frames.return?.();
     expect(exitCode).toBe(0);
     expect(exitSignal).toBeNull();
     child = undefined;
@@ -379,9 +448,24 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
     expect(reloadedMeResponse.status).toBe(200);
     const reloadedMe = MeResponse.parse(await reloadedMeResponse.json());
     expect(reloadedMe.vapidPublicKey).toBe(me.vapidPublicKey);
+    expect(reloadedMe.device.online).toBe(false);
+    const replaySocket = await connect(reloaded.port, second.token, firstId);
+    await replaySocket.next("ready");
+    expect(await replaySocket.next("push")).toMatchObject({ push: { id: secondId } });
+    expect(await replaySocket.next("replay_done")).toEqual({ type: "replay_done" });
+    const removedPush = await fetch(`${reloadedOrigin}/api/pushes/${secondId}`, {
+      method: "DELETE",
+      headers: bearer(owner.token),
+    });
+    expect(removedPush.status).toBe(204);
+    expect(await replaySocket.next("push_deleted")).toEqual({ type: "push_deleted", id: secondId });
+    replaySocket.socket.close();
+    await replaySocket.closed;
+    await replaySocket.frames.return?.();
     expect(reloaded.output().includes(vapidKeys.privateKey)).toBe(false);
     expect((await requestJson(reloadedOrigin, "/api/setup", setupRequest)).status).toBe(409);
   } finally {
+    for (const socket of sockets) socket.terminate();
     try {
       if (child) await stopRuntime(child);
     } finally {

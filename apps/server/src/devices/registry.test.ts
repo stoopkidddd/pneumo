@@ -1,5 +1,5 @@
 import { b64uEncode } from "@pneumo/crypto";
-import type { DeviceRecord, WebPushSubscription } from "@pneumo/protocol";
+import type { DeviceDTO, DeviceRecord, WebPushSubscription } from "@pneumo/protocol";
 import { expect, test, vi } from "vitest";
 import type { Clock } from "../app.js";
 import { EventBus } from "../events.js";
@@ -39,6 +39,49 @@ test("creates reloadable DTOs without exposing persisted token hashes or subscri
   const reloaded = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
   expect(reloaded.get(created.device.id)).toEqual(created.device);
   expect((await reloaded.authenticate(created.token))?.id).toBe(created.device.id);
+});
+
+test("applies transient online state to every DTO conversion without persisting it", async () => {
+  let now = Date.parse("2026-02-01T00:00:00.000Z");
+  const clock: Clock = { now: () => now };
+  const storage = new MemoryStorage({ now: clock.now });
+  const events = new EventBus();
+  const added: DeviceDTO[] = [];
+  const updated: DeviceDTO[] = [];
+  events.on("device_added", ({ device }) => added.push(device));
+  events.on("device_updated", ({ device }) => updated.push(device));
+  const registry = await DeviceRegistry.load({ storage, clock, events });
+  const created = await registry.create({ name: "Browser", platform: "web" });
+  expect(added).toEqual([created.device]);
+  expect(created.device.online).toBe(false);
+
+  registry.setOnline(created.device.id, true);
+  expect(updated).toEqual([]);
+  expect(registry.get(created.device.id)?.online).toBe(true);
+  expect(registry.list()).toEqual([{ ...created.device, online: true }]);
+  expect((await registry.authenticate(created.token))?.online).toBe(true);
+
+  now += 60_000;
+  const seen = await registry.authenticate(created.token);
+  expect(seen?.online).toBe(true);
+  expect(updated.at(-1)).toEqual(seen);
+  const renamed = await registry.rename(created.device.id, "Primary browser");
+  expect(renamed?.online).toBe(true);
+  expect(updated.at(-1)).toEqual(renamed);
+
+  const persisted = await storage.getJson<Record<string, unknown>>(
+    `devices/${created.device.id}.json`,
+  );
+  expect(persisted).not.toHaveProperty("online");
+
+  registry.setOnline(created.device.id, false);
+  expect(registry.get(created.device.id)?.online).toBe(false);
+  expect((await registry.authenticate(created.token))?.online).toBe(false);
+  registry.setOnline(created.device.id, true);
+
+  const reloaded = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+  expect(reloaded.get(created.device.id)?.online).toBe(false);
+  expect((await reloaded.authenticate(created.token))?.online).toBe(false);
 });
 
 test("throttles concurrent lastSeen writes and preserves racing field updates", async () => {
@@ -86,12 +129,12 @@ test("remove wins against queued authentication without resurrecting a record", 
   const clock: Clock = { now: () => now };
   const storage = new MemoryStorage({ now: clock.now });
   const events = new EventBus();
-  const closed: Array<{ deviceId: string; code: number }> = [];
-  const removed: string[] = [];
-  events.on("close_device", (event) => closed.push(event));
-  events.on("device_removed", ({ id }) => removed.push(id));
+  const eventOrder: string[] = [];
+  events.on("device_removed", ({ id }) => eventOrder.push(`removed:${id}`));
+  events.on("close_device", ({ deviceId, code }) => eventOrder.push(`closed:${deviceId}:${code}`));
   const registry = await DeviceRegistry.load({ storage, clock, events });
   const created = await registry.create({ name: "CLI", platform: "cli" });
+  registry.setOnline(created.device.id, true);
   now += 60_000;
 
   const deletion = registry.remove(created.device.id);
@@ -100,8 +143,9 @@ test("remove wins against queued authentication without resurrecting a record", 
   expect(await authentication).toBeNull();
   expect(await registry.authenticate(created.token)).toBeNull();
   expect(await storage.head(`devices/${created.device.id}.json`)).toBeNull();
-  expect(closed).toEqual([{ deviceId: created.device.id, code: 4401 }]);
-  expect(removed).toEqual([created.device.id]);
+  expect(eventOrder).toEqual([`removed:${created.device.id}`, `closed:${created.device.id}:4401`]);
+  registry.setOnline(created.device.id, true);
+  expect(registry.get(created.device.id)).toBeNull();
 });
 
 test("stores and clears a valid Web Push subscription and rejects invalid material", async () => {

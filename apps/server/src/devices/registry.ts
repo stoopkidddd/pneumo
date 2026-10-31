@@ -28,21 +28,11 @@ function tokenDigest(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
 }
 
-function toDTO(record: DeviceRecord): DeviceDTO {
-  return {
-    id: record.id,
-    name: record.name,
-    platform: record.platform,
-    createdAt: record.createdAt,
-    lastSeenAt: record.lastSeenAt,
-    online: false,
-  };
-}
-
 export class DeviceRegistry {
   private readonly records = new Map<string, DeviceRecord>();
   private readonly tokenIndex = new Map<string, string>();
   private readonly operations = new Map<string, Promise<void>>();
+  private readonly online = new Set<string>();
 
   private constructor(private readonly deps: DeviceRegistryDependencies) {}
 
@@ -91,7 +81,7 @@ export class DeviceRegistry {
     this.records.set(record.id, record);
     this.tokenIndex.set(record.tokenHash, record.id);
 
-    const dto = toDTO(record);
+    const dto = this.toDTO(record);
     this.deps.events.emit("device_added", { device: dto });
     return { device: dto, token };
   }
@@ -103,11 +93,17 @@ export class DeviceRegistry {
 
     return this.serialized(id, async () => {
       const record = this.records.get(id);
-      if (record === undefined || record.tokenHash !== tokenHash) return null;
+      if (
+        record === undefined ||
+        record.tokenHash !== tokenHash ||
+        this.tokenIndex.get(tokenHash) !== id
+      ) {
+        return null;
+      }
 
       const now = this.deps.clock.now();
       const elapsed = now - Date.parse(record.lastSeenAt);
-      if (elapsed < LAST_SEEN_WRITE_INTERVAL_MS) return toDTO(record);
+      if (elapsed < LAST_SEEN_WRITE_INTERVAL_MS) return this.toDTO(record);
 
       const updated = DeviceRecord.parse({
         ...record,
@@ -115,7 +111,7 @@ export class DeviceRegistry {
       });
       await this.deps.storage.putJson(objectKey(id), updated);
       this.records.set(id, updated);
-      const dto = toDTO(updated);
+      const dto = this.toDTO(updated);
       this.deps.events.emit("device_updated", { device: dto });
       return dto;
     });
@@ -123,11 +119,19 @@ export class DeviceRegistry {
 
   get(id: string): DeviceDTO | null {
     const record = this.records.get(id);
-    return record === undefined ? null : toDTO(record);
+    return record === undefined ? null : this.toDTO(record);
   }
 
   list(): DeviceDTO[] {
-    return [...this.records.values()].map(toDTO);
+    return [...this.records.values()].map((record) => this.toDTO(record));
+  }
+
+  setOnline(id: string, online: boolean): void {
+    if (online && this.records.has(id)) {
+      this.online.add(id);
+    } else {
+      this.online.delete(id);
+    }
   }
 
   async rename(id: string, name: string): Promise<DeviceDTO | null> {
@@ -138,7 +142,7 @@ export class DeviceRegistry {
       const updated = DeviceRecord.parse({ ...record, name });
       await this.deps.storage.putJson(objectKey(id), updated);
       this.records.set(id, updated);
-      const dto = toDTO(updated);
+      const dto = this.toDTO(updated);
       this.deps.events.emit("device_updated", { device: dto });
       return dto;
     });
@@ -152,8 +156,9 @@ export class DeviceRegistry {
       await this.deps.storage.delete(objectKey(id));
       this.records.delete(id);
       this.tokenIndex.delete(record.tokenHash);
-      this.deps.events.emit("close_device", { deviceId: id, code: 4401 });
+      this.online.delete(id);
       this.deps.events.emit("device_removed", { id });
+      this.deps.events.emit("close_device", { deviceId: id, code: 4401 });
       return true;
     });
   }
@@ -169,6 +174,17 @@ export class DeviceRegistry {
       this.records.set(id, updated);
       return true;
     });
+  }
+
+  private toDTO(record: DeviceRecord): DeviceDTO {
+    return {
+      id: record.id,
+      name: record.name,
+      platform: record.platform,
+      createdAt: record.createdAt,
+      lastSeenAt: record.lastSeenAt,
+      online: this.online.has(record.id),
+    };
   }
 
   private async serialized<T>(id: string, operation: () => Promise<T>): Promise<T> {

@@ -98,7 +98,21 @@ a different body returns 409. History is newest first by `(createdAt, id)`, with
 empty page. Deleting a push also deletes its encrypted file. The in-memory index has a
 soft operating limit of about 20,000 pushes; compaction is not implemented. Every thirty
 seconds, reconciliation merges unknown records from the first 100 bucket keys and emits
-`push` events. The later WebSocket hub and Web Push sender consume server events.
+`push` events. The WebSocket hub consumes server events; Web Push sending is not implemented yet.
+
+`GET /api/ws` upgrades on the same HTTP server. Send a protocol `hello` within ten seconds;
+it authenticates through the same token-hash registry as HTTP bearer requests. `ready` is
+followed by at most 200 newer pushes, oldest first, then `replay_done`. An unknown cursor
+or more than 200 newer pushes produces `resync` instead; `since: null` skips replay.
+Push, deletion and device events reach every authenticated socket, regardless of targeting.
+Device revocation broadcasts `device_removed` before closing that device's sockets with 4401.
+
+The hub sends application-level `ping` frames every `WS_PING_SECONDS` (default 60).
+Clients must send JSON `pong` frames; two missed response windows terminate the socket.
+Other client frame types, repeated hello, binary frames and invalid JSON close with 4400.
+Sockets buffering more than 1 MiB are terminated so clients can reconnect and replay.
+Device DTO presence reflects authenticated socket counts immediately; presence transitions
+broadcast `device_updated` after a two-second debounce. Presence is not stored in the bucket.
 
 An hourly sweep deletes unreferenced file objects older than 24 hours. With
 `RETENTION_DAYS > 0`, a daily sweep deletes older pushes and their files; zero keeps push
@@ -117,10 +131,10 @@ mise exec -- node --env-file=.env.local apps/server/dist/cli.js reset --yes
 creating owner or VAPID records. `reset` reports the deleted object count and removes
 everything within `S3_PREFIX`, including metadata; it refuses without `--yes`.
 
-Storage, authentication, push/file routes, index reconciliation, sweeps, and CLI tests use
-memory storage and fake clocks in `check:server` (no Docker). Run MinIO persistence,
-direct/proxy upload-download byte equality, administration CLI, and bundled HTTP lifecycle
-integration tests with:
+Storage, authentication, push/file routes, index reconciliation, sweeps, CLI and real-socket
+WebSocket tests use memory storage and fake clocks/timers in `check:server` (no Docker).
+Run MinIO persistence, direct/proxy upload-download byte equality, administration CLI, and
+bundled HTTP/WebSocket lifecycle integration tests with:
 
 ```sh
 mise run e2e:server
@@ -134,9 +148,9 @@ mode still permits signed PUT/GET when bucket CORS is configured externally.
 
 `check:server` also checks bundled startup's safe config failures. The MinIO integration
 suite launches the bundle with plain Node, an ephemeral port, and a temporary web fixture.
-It exercises setup, authentication, pairing, restart persistence, HTML serving, and SIGTERM
-shutdown. The shutdown hook list in `src/index.ts` is the registration point for the later
-WebSocket hub; hooks receive close code 1012, with a ten-second drain deadline.
+It exercises setup, authentication, pairing, live delivery, replay after restart, HTML
+serving, and SIGTERM shutdown. The WebSocket hub registers in the shutdown hook list in
+`src/index.ts` and closes all sockets with 1012, with a ten-second drain deadline.
 Storage sockets remain open during the drain; process exit releases them afterward.
 
 The injected `Clock.now()` returns Unix epoch milliseconds, matching `Date.now()`. Tests use

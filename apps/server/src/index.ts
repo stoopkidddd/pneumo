@@ -13,6 +13,7 @@ import { S3Storage } from "./storage/s3.js";
 import { resolveUploadMode } from "./storage/upload-mode.js";
 import { startSweeps } from "./sweeps/index.js";
 import { loadVapidKeys } from "./webpush/vapid.js";
+import { attachWebSocketHub } from "./ws/hub.js";
 
 try {
   const config = loadConfig(process.env);
@@ -61,6 +62,17 @@ try {
   const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => {
     logger.info({ port }, "Server listening");
   });
+  shutdownHooks.push(
+    attachWebSocketHub({
+      server,
+      devices,
+      pushes,
+      events,
+      clock: systemClock,
+      logger,
+      pingSeconds: config.WS_PING_SECONDS,
+    }),
+  );
   server.on("error", () => {
     logger.fatal("Server failed to listen");
     process.exit(1);
