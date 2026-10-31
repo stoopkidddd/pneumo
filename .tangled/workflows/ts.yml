@@ -1,0 +1,43 @@
+when:
+  - event: [push, pull_request]
+    branch: main
+    paths:
+      - "packages/**"
+      - "apps/server/**"
+      - "apps/web/**"
+      - "scripts/crosscheck_vectors.py"
+      - "scripts/ci/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "biome.json"
+      - "vitest.config.ts"
+      - "mise.toml"
+      - ".tangled/workflows/**"
+      - "docs/agents/tangled.md"
+
+engine: nixery
+dependencies:
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, python3, bash, coreutils, git, gnutar, zstd]
+environment:
+  # Nixery shares only the workspace between steps, not the home directory.
+  PNPM_HOME: /tangled/workspace/.pnpm
+cache:
+  - key: pnpm-ts
+    paths: [.pnpm-store, .pnpm]
+    hash: [pnpm-lock.yaml]
+    fallback: true
+steps:
+  - name: Install locked dependencies
+    command: |
+      node --version
+      pnpm --version
+      python3 --version
+      pnpm install --frozen-lockfile --store-dir .pnpm-store
+  - name: check:protocol
+    command: bash scripts/ci/check.sh protocol
+  - name: check:server
+    command: bash scripts/ci/check.sh server
+  - name: check:web
+    command: bash scripts/ci/check.sh web

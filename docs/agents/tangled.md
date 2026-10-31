@@ -196,8 +196,8 @@ The Node version and timeout probe passed:
 | Total | 5 m 35 s |
 
 The nixpkgs `nodejs` package provides Node **v22.22.0**, not Node 26.
-For Node 26, use a versioned nixpkgs attribute or install Node with mise.
-The CI issue must confirm the exact attribute name, such as `nodejs_26`.
+The lane workflows request `nodejs_26` explicitly from `nixpkgs/nixpkgs-unstable`, rather than relying on that default.
+The attribute exists in the [upstream package definitions](https://github.com/NixOS/nixpkgs/blob/master/pkgs/top-level/all-packages.nix); resolution on the hosted spindle is pending its first run. There is no local Nix installation.
 
 ### Scheduling and timeout
 
@@ -216,16 +216,50 @@ The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ## CI coverage table
 
-The CI issues will fill in lane coverage.
+ENG-277 adds three `nixery` workflows, each filtered by changed paths and triggered on `push` to `main` and `pull_request` targeting `main`. A condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected groups.
 
-| Lane | CI or local-only |
-| -- | -- |
-| pneumo-protocol | TBD (ENG-277 / ENG-278) |
-| pneumo-server | TBD (ENG-277 / ENG-278) |
-| pneumo-web | TBD (ENG-277 / ENG-278) |
-| pneumo-android | TBD (ENG-277 / ENG-278) |
-| pneumo-infra | TBD (ENG-277 / ENG-278) |
-| pneumo-brand | TBD (ENG-277 / ENG-278) |
+| Lane | CI or local-only | Workflow / reason | Local warm check time | Hosted warm duration |
+| -- | -- | -- | -- | -- |
+| pneumo-protocol | CI (pending first run) | `ts.yml`: full `check:protocol`, including the Python crypto cross-check | 8.11 s | Pending lead measurement |
+| pneumo-server | CI (pending first run) | `ts.yml`: full `check:server` | 2.98 s | Pending lead measurement |
+| pneumo-web | CI (pending first run) | `ts.yml`: full `check:web`, including the production build | 4.29 s | Pending lead measurement |
+| pneumo-android | local-only (full lane); static subset CI (pending first run) | `android.yml`: only `spotlessCheck detekt`; SDK 37.2 / build-tools 37.0.0, lint, JVM tests and screenshots remain local | 0.74 s subset; 8.32 s full lane with local SDK | Pending lead measurement (subset only) |
+| pneumo-infra | CI (pending first run) | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | 3.27 s | Pending lead measurement |
+| pneumo-brand | CI (pending first run) | `infra.yml`: full `check:brand`, sequential after infra; Linux PNG byte identity is not yet proven | 2.09 s | Pending lead measurement |
+
+### Local timing evidence, not hosted timings
+
+Measured on 2026-10-31 on darwin-arm64, with Node 26.10.0, pnpm 11.28.10 and Temurin 17.0.20.1. The check commands also passed with no `mise` binary on `PATH`. Local pnpm/Gradle dependency caches were warm; Gradle's normal home was unchanged.
+
+| Workflow group | Local check-step total | Includes | Hosted total |
+| -- | -- | -- | -- |
+| `ts.yml` | 16.78 s | Frozen install using the local pnpm store, protocol, server, web | Pending first run and warm-cache rerun |
+| `infra.yml` | 6.25 s | Frozen install using the local pnpm store, infra, brand | Pending first run and warm-cache rerun |
+| `android.yml` | 0.77 s | Java version, SDK-free static subset | Pending first run and warm-cache rerun |
+
+These totals exclude Nixery image setup, clone, cache transfer, and the first download into the workflow-specific cache directories. They do not establish the hosted timeout fit. All three workflows can run sequentially; measure the complete pipeline as well as each workflow, because queued time counts toward the unknown timeout.
+
+An isolated Android copy with no `local.properties`, `ANDROID_HOME` or `ANDROID_SDK_ROOT` ran `spotlessCheck detekt` successfully in 1.04 s, with five tasks executed and no SDK download. That justifies a useful SDK-free workflow without provisioning `androidenv` or accepting SDK licences. The complete local `check:android` also passed; it is still a mandatory local merge check.
+
+### Toolchain, caches and validation
+
+* `scripts/ci/check.sh` owns the lane commands; mise tasks and workflows call the same wrapper. Every existing task and the root `check` dependency list remain intact. No workflow runs `mise install` or requires mise.
+* TS and infra use the documented `nixpkgs/nixpkgs-unstable` registry syntax with `nodejs_26` and `pnpm_11`. This avoids the hosted default's older Node. Node's major matches mise; its exact patch depends on the runner's nixpkgs revision and is printed in the install step.
+* [Upstream `pnpm_11`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/pnpm/default.nix) currently supplies 11.27.0, versus the repo's 11.28.10. pnpm's package-manager version management selects the exact `packageManager` version from `package.json`; invoking the older pnpm 11.22.0 binary directly selected 11.28.10 twice and retained that version under a shared `PNPM_HOME/store`. `PNPM_HOME` is inside the cached workspace so that selection survives fresh Nixery step containers. Hosted resolution/version output remains to be checked.
+* TS includes `python3` for the vector cross-check. Infra includes `docker-client` (with Compose), shellcheck, and hadolint. There is currently no Dockerfile to lint or build; adding Docker build checks belongs to the Dockerfile issue, not ENG-277.
+* Android uses `jdk17`, curl/unzip for the wrapper, findutils/gnused for its `xargs`/`sed` launcher commands, and an explicitly workspace-backed `GRADLE_USER_HOME`, not a temporary directory. Only Gradle's `caches` and `wrapper` directories are archived.
+* pnpm caches `.pnpm-store` and `.pnpm`, hashed by `pnpm-lock.yaml`. Gradle hashes `apps/android/gradle/libs.versions.toml` and `apps/android/gradle/wrapper/gradle-wrapper.properties`. All entries use `fallback: true`; every image includes `gnutar` and `zstd` for cache archives.
+* `check:infra` parses workflow YAML with `scripts/ci/validate-workflows.ts`. It checks common, trigger/schedule, clone, cache, step and engine-specific key lists from the [Tangled workflow reference](https://tangled.org/docs/spindles/workflows/), including the differing dependency shapes. Registry names, environment variable names and NixOS option maps remain open-ended. This is a supported-key check, not a replacement for spindle validation.
+* A temporary workflow containing unsupported top-level `timeout` made `mise run check:infra` exit 1 with `unsupported key "timeout"`. Removing it restored exit 0. Fifteen throwaway validator scenarios also covered valid engines/schedules, nested unknown keys, dependency shape, duplicate keys, invalid YAML and the acceptance of ignored NixOS options on non-NixOS microVM images.
+
+### Lead's hosted verification round
+
+1. Push this branch and open/resubmit its PR; verify all three workflows appear and pass. Record resolved tool versions, cold totals, then a warm-cache rerun with per-lane and per-workflow durations in the tables above. Do not mark a lane confirmed CI until this evidence exists.
+2. If Linux brand output differs, mark full `check:brand` local-only and remove its CI step; do not re-record generated assets merely to make Linux green. Keep the useful infra workflow.
+3. If any group cannot fit the observed hosted limit (including queue time), mark the affected lane local-only with the measured reason and retain a workflow only for a useful subset.
+4. Push a deliberately failing check commit, observe a red pipeline, then revert it in the next round and observe green. This lead-only acceptance test is separate from the local validator failure proof.
+5. Before merging, run full `mise run check:android` locally and every lane still marked pending or local-only. e2e coverage is outside ENG-277.
+
 
 ## Known Tangled quirks
 

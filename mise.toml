@@ -2,6 +2,7 @@
 node = "26"
 pnpm = "11.28.10"
 java = "temurin-17"
+shellcheck = "0.11.0"
 
 [env]
 _.file = { path = ".env.local", redact = true }
@@ -13,28 +14,15 @@ depends = ["check:protocol", "check:server", "check:web", "check:android", "chec
 
 [tasks."check:protocol"]
 description = "Check protocol and crypto formatting, lint, types and tests"
-run = [
-  "pnpm exec biome check --error-on-warnings package.json pnpm-workspace.yaml tsconfig.base.json biome.json vitest.config.ts packages/protocol packages/crypto",
-  "pnpm --filter @pneumo/protocol --filter @pneumo/crypto run typecheck",
-  "pnpm exec vitest run --project @pneumo/protocol --project @pneumo/crypto",
-]
+run = "bash scripts/ci/check.sh protocol"
 
 [tasks."check:server"]
 description = "Check server formatting, lint, types and tests"
-run = [
-  "pnpm exec biome check --error-on-warnings apps/server",
-  "pnpm --filter @pneumo/server run typecheck",
-  "pnpm exec vitest run --project @pneumo/server",
-]
+run = "bash scripts/ci/check.sh server"
 
 [tasks."check:web"]
 description = "Check web formatting, lint, types, tests and production build"
-run = [
-  "pnpm exec biome check --error-on-warnings apps/web",
-  "pnpm --filter @pneumo/web run typecheck",
-  "pnpm exec vitest run --project @pneumo/web",
-  "pnpm --filter @pneumo/web run build",
-]
+run = "bash scripts/ci/check.sh web"
 
 [tasks.fmt]
 description = "Format TypeScript packages and root configuration"
@@ -47,8 +35,7 @@ run = "./scripts/setup.sh"
 
 [tasks."check:android"]
 description = "Check Android formatting, analysis, lint, JVM tests and screenshots"
-dir = "apps/android"
-run = "./gradlew spotlessCheck detekt lint testDebugUnitTest verifyRoborazziDebug"
+run = "bash scripts/ci/check.sh android"
 
 [tasks."e2e:android"]
 description = "Run the Pixel 6 API 34 managed-device smoke test"
@@ -61,10 +48,7 @@ run = "pnpm exec node scripts/brand-export.mjs"
 
 [tasks."check:brand"]
 description = "Validate brand sources, contrast and reproducible generated assets"
-run = [
-  "pnpm exec biome check --error-on-warnings scripts/brand-export.mjs brand/tokens.json brand/tokens.schema.json",
-  "pnpm exec node scripts/brand-export.mjs --check",
-]
+run = "bash scripts/ci/check.sh brand"
 
 [tasks."dev:infra"]
 description = "Start persistent local MinIO and create the development bucket"
@@ -86,9 +70,4 @@ depends = ["dev:server", "dev:web"]
 
 [tasks."check:infra"]
 description = "Validate Compose, shell scripts and infrastructure TypeScript"
-run = [
-  "docker compose config -q",
-  "find scripts -type f -name '*.sh' -exec shellcheck {} +",
-  "pnpm exec biome check --error-on-warnings scripts/",
-  "pnpm exec tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node scripts/e2e/minio.ts",
-]
+run = "bash scripts/ci/check.sh infra"

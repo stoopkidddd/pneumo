@@ -1,0 +1,48 @@
+when:
+  - event: [push, pull_request]
+    branch: main
+    paths:
+      - "scripts/**"
+      - "brand/**"
+      - "apps/web/src/assets/fonts/**"
+      - "apps/web/src/assets/brand/**"
+      - "apps/web/src/styles/tokens.css"
+      - "apps/web/public/**"
+      - "apps/android/app/src/main/res/**"
+      - "apps/android/app/src/main/java/dev/pneumo/app/ui/theme/BrandColors.kt"
+      - "Dockerfile*"
+      - "docker-compose*.yml"
+      - "railway.json"
+      - ".env.example"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "biome.json"
+      - "mise.toml"
+      - ".tangled/workflows/**"
+      - "docs/agents/tangled.md"
+
+engine: nixery
+dependencies:
+  # Compose validation uses only the client; no Docker daemon or microVM needed.
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, findutils, git, docker-client, hadolint, shellcheck, gnutar, zstd]
+environment:
+  PNPM_HOME: /tangled/workspace/.pnpm
+cache:
+  - key: pnpm-infra
+    paths: [.pnpm-store, .pnpm]
+    hash: [pnpm-lock.yaml]
+    fallback: true
+steps:
+  - name: Install locked dependencies
+    command: |
+      node --version
+      pnpm --version
+      pnpm install --frozen-lockfile --store-dir .pnpm-store
+  - name: check:infra
+    command: bash scripts/ci/check.sh infra
+  # Keep export/check sequential: it rewrites web and Android generated assets.
+  # Linux PNG reproducibility is pending the first hosted run.
+  - name: check:brand
+    command: bash scripts/ci/check.sh brand

@@ -1,0 +1,31 @@
+# Full check:android is local-only: SDK 37.2/build-tools 37.0.0 and
+# lint/JVM/screenshots are not provisioned on the hosted spindle.
+# spotlessCheck and detekt were exercised without an SDK; keep this useful subset.
+when:
+  - event: [push, pull_request]
+    branch: main
+    paths:
+      - "apps/android/**"
+      - "scripts/ci/**"
+      - "mise.toml"
+      - ".tangled/workflows/**"
+      - "docs/agents/tangled.md"
+
+engine: nixery
+dependencies:
+  nixpkgs: [jdk17, bash, coreutils, findutils, gnused, git, curl, unzip, gnutar, zstd]
+environment:
+  # Workspace-backed, restored cache; never point Gradle at a temporary directory.
+  GRADLE_USER_HOME: /tangled/workspace/.gradle
+cache:
+  - key: gradle-android
+    paths: [.gradle/caches, .gradle/wrapper]
+    hash:
+      - apps/android/gradle/libs.versions.toml
+      - apps/android/gradle/wrapper/gradle-wrapper.properties
+    fallback: true
+steps:
+  - name: Java version
+    command: java -version
+  - name: Android SDK-free static checks
+    command: bash scripts/ci/check.sh android-static
