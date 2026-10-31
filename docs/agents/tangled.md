@@ -273,7 +273,16 @@ Measured on PR #9 (first green hosted run, `986b257`, pnpm and Gradle caches emp
 | `android.yml` | 51 s | Gradle step 41 s |
 | **Pipeline** | **2 m 35 s** | The workflows run one after another, so the pipeline is their sum. |
 
-The next run (`37db504`, caches saved) took 2 m 24 s. "Install custom dependencies" (the Nix packages) is about 26 s on every run, and no `cache:` entry covers it.
+Warm run on PR #9 (`c67c791`, pnpm and Gradle caches restored; pnpm reused 129 packages and downloaded 27 new ones):
+
+| Workflow | Total | Main costs |
+| -- | -- | -- |
+| `ts.yml` | 55 s | Nix dependency install 25 s, `pnpm install` 5 s, `check:protocol` 12 s, `check:server` 6 s, `check:web` 4 s |
+| `infra.yml` | 43 s | Nix dependency install about 26 s, then `pnpm install`, `check:infra` and `check:brand` |
+| `android.yml` | 45 s | Gradle step (static checks) |
+| **Pipeline** | **2 m 24 s** | Sum of the three workflows. |
+
+"Install custom dependencies" (the Nix packages) takes about 25 s in every Node workflow, warm or cold, and no `cache:` entry covers it.
 
 **CI can fail (proven):** `37db504` added a test that fails on purpose (`apps/server/src/ci-red.test.ts`). `ts.yml` failed at `check:server` with exit 1, and `infra.yml` and `android.yml` passed. The next round dropped that commit and the pipeline went green again.
 
