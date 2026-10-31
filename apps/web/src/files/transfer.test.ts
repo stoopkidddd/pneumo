@@ -177,6 +177,7 @@ test("uploads real authenticated ciphertext and omits forbidden and bearer heade
     token: "test-device-credential",
     uploadMode: "direct",
     file: fileFromBytes(bytes),
+    title: "  Attached title  ",
     body: "Attached",
     maxFileBytes: 1_000,
     maxEnvelopeBytes: 1_000,
@@ -199,11 +200,45 @@ test("uploads real authenticated ciphertext and omits forbidden and bearer heade
   );
   expect(plaintext).toEqual(bytes);
   expect(result.file).toEqual({ id: fileId, size: ciphertextSize(bytes.byteLength) });
+  expect(result.payload.title).toBe("  Attached title  ");
+  expect(result.payload.body).toBe("Attached");
   expect(progress).toHaveBeenCalledWith({
     phase: "uploading",
     loaded: ciphertextSize(bytes.byteLength),
     total: ciphertextSize(bytes.byteLength),
   });
+});
+
+test.each([
+  { title: "", body: "" },
+  { title: " \t ", body: " \n " },
+])("omits blank optional metadata at the exact envelope limit: %j", async (metadata) => {
+  const file = fileFromBytes(new Uint8Array([42]));
+  const maxEnvelopeBytes = envelopeByteLength({
+    type: "file",
+    file: {
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+      key: "A".repeat(43),
+    },
+  });
+  const result = await uploadFile({
+    api: createUploadApi(),
+    token: "test-device-credential",
+    uploadMode: "direct",
+    file,
+    ...metadata,
+    maxFileBytes: ciphertextSize(file.size),
+    maxEnvelopeBytes,
+    signal: new AbortController().signal,
+    onProgress: vi.fn(),
+    onUnauthorized: vi.fn(),
+  });
+
+  expect(Object.hasOwn(result.payload, "title")).toBe(false);
+  expect(Object.hasOwn(result.payload, "body")).toBe(false);
+  expect(envelopeByteLength(result.payload)).toBe(maxEnvelopeBytes);
 });
 
 test("a pre-cancelled upload rejects before reservation, encryption, or binary network", async () => {

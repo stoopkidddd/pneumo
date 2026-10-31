@@ -426,6 +426,8 @@ for (const uploadMode of ["direct", "proxy"] as const) {
         await aborted;
         await expect(uploading.getByText("Upload cancelled. No push was sent.")).toBeVisible();
         expect(createPushes).toBe(0);
+        await uploading.getByRole("button", { name: "Dismiss", exact: true }).click();
+        await expect(uploading).toHaveCount(0);
 
         await network.send("Network.emulateNetworkConditions", {
           offline: false,

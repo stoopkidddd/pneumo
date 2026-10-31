@@ -68,8 +68,7 @@ export function useFiles({
     for (const [index, file] of files.entries()) {
       validateFile({
         file,
-        body: index === 0 ? body : "",
-        title: index === 0 ? title : "",
+        ...(index === 0 ? { body, title } : {}),
         maxFileBytes,
         maxEnvelopeBytes,
       });
@@ -98,8 +97,7 @@ export function useFiles({
             token: session.token,
             uploadMode,
             file,
-            body: index === 0 ? body : "",
-            title: index === 0 ? title : "",
+            ...(index === 0 ? { body, title } : {}),
             maxFileBytes,
             maxEnvelopeBytes,
             signal: controller.signal,

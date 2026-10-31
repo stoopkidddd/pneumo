@@ -47,8 +47,8 @@ export function formatBytes(bytes: number): string {
 function buildFilePayload(file: File, key: string, body?: string, title?: string): FilePayload {
   return {
     type: "file",
-    ...(title === undefined ? {} : { title }),
-    ...(body === undefined ? {} : { body }),
+    ...(title !== undefined && title.trim().length > 0 ? { title } : {}),
+    ...(body !== undefined && body.trim().length > 0 ? { body } : {}),
     file: {
       name: file.name,
       mime: file.type || "application/octet-stream",
