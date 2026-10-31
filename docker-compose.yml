@@ -1,0 +1,46 @@
+services:
+  minio:
+    # Official MinIO registry images were removed; pin the archived vendor builds.
+    image: bitnamilegacy/minio:2025.4.22-debian-12-r2
+    entrypoint: ["minio"]
+    command: server /bitnami/minio/data --console-address :9001
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_API_CORS_ALLOW_ORIGIN: "*" # Local development only.
+    volumes:
+      - minio-data:/bitnami/minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  minio-init:
+    image: bitnamilegacy/minio-client:2025.4.16-debian-12-r2
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    environment:
+      MC_CONFIG_DIR: /tmp/mc
+    command:
+      - mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && mc mb --ignore-existing local/pneumo
+
+  # Enable after the Dockerfile issue lands:
+  # server:
+  #   profiles: ["server"]
+  #   build: .
+  #   env_file: .env.local
+  #   environment:
+  #     S3_ENDPOINT: http://minio:9000
+  #   ports:
+  #     - "127.0.0.1:8080:8080"
+  #   depends_on:
+  #     minio-init:
+  #       condition: service_completed_successfully
+
+volumes:
+  minio-data:

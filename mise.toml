@@ -9,7 +9,7 @@ ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
 
 [tasks.check]
 description = "Run every lane check"
-depends = ["check:protocol", "check:server", "check:web", "check:android", "check:brand"]
+depends = ["check:protocol", "check:server", "check:web", "check:android", "check:brand", "check:infra"]
 
 [tasks."check:protocol"]
 description = "Check protocol and crypto formatting, lint, types and tests"
@@ -64,4 +64,31 @@ description = "Validate brand sources, contrast and reproducible generated asset
 run = [
   "pnpm exec biome check --error-on-warnings scripts/brand-export.mjs brand/tokens.json brand/tokens.schema.json",
   "pnpm exec node scripts/brand-export.mjs --check",
+]
+
+[tasks."dev:infra"]
+description = "Start persistent local MinIO and create the development bucket"
+run = "docker compose up -d minio minio-init"
+
+[tasks."dev:server"]
+description = "Run the server dev script when available"
+depends = ["dev:infra"]
+run = "pnpm --filter @pneumo/server --if-present run dev"
+
+[tasks."dev:web"]
+description = "Run the web dev script when available"
+depends = ["dev:infra"]
+run = "pnpm --filter @pneumo/web --if-present run dev"
+
+[tasks.dev]
+description = "Start local infrastructure, then server and web in parallel"
+depends = ["dev:server", "dev:web"]
+
+[tasks."check:infra"]
+description = "Validate Compose, shell scripts and infrastructure TypeScript"
+run = [
+  "docker compose config -q",
+  "find scripts -type f -name '*.sh' -exec shellcheck {} +",
+  "pnpm exec biome check --error-on-warnings scripts/",
+  "pnpm exec tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node scripts/e2e/minio.ts",
 ]
