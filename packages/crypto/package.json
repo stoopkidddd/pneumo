@@ -3,12 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.test.json",
+    "vectors:generate": "tsx scripts/generate-vectors.ts"
   },
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@pneumo/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2",
+    "tsx": "4.23.15"
   }
 }
