@@ -7,9 +7,12 @@
     "typecheck": "tsc --noEmit",
     "build": "tsup",
     "dev": "tsx watch --env-file-if-exists=../../.env.local src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1160.0",
+    "@aws-sdk/s3-request-presigner": "3.1160.0",
     "@hono/node-server": "2.1.5",
     "@pneumo/protocol": "workspace:*",
     "hono": "4.13.14",

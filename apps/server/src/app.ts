@@ -9,9 +9,8 @@ import type { Config } from "./config.js";
 import { errorResponse, handleError } from "./http/errors.js";
 import { securityHeaders, staticCacheControl } from "./http/headers.js";
 import { createRequestLogger } from "./log.js";
-
-// biome-ignore lint/suspicious/noEmptyInterface: ENG-249 supplies the storage contract; boot must not access the bucket yet.
-export interface Storage {}
+import type { Storage } from "./storage/types.js";
+import type { UploadMode } from "./storage/upload-mode.js";
 
 export interface Clock {
   /** Returns Unix epoch milliseconds. */
@@ -30,8 +29,7 @@ export interface AppDependencies {
   clock: Clock;
   logger: Logger;
   instanceState: InstanceState;
-  // Supplied by storage only when direct uploads are available.
-  bucketOrigin?: string;
+  uploadMode: UploadMode;
 }
 
 export type AppEnv = {
@@ -69,7 +67,7 @@ export function createApp(deps: AppDependencies) {
     "*",
     securityHeaders(
       deps.config.PUBLIC_URL,
-      deps.config.UPLOAD_MODE === "proxy" ? undefined : deps.bucketOrigin,
+      deps.uploadMode === "direct" ? deps.storage.bucketOrigin : undefined,
     ),
   );
   const limitJson = bodyLimit({

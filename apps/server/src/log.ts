@@ -45,6 +45,8 @@ const SECRET_KEYS: Record<string, true> = {
   authkey: true,
   setuptoken: true,
   envelope: true,
+  s3_access_key_id: true,
+  s3_secret_access_key: true,
 };
 const WEB_PUSH_CONTAINERS: Record<string, true> = {
   webpush: true,

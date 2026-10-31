@@ -9,6 +9,8 @@ import packageJson from "../package.json" with { type: "json" };
 import { createApp, systemClock } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
+import { MemoryStorage } from "./storage/memory.js";
+import type { UploadMode } from "./storage/upload-mode.js";
 
 let webDist: string;
 const html = "<!doctype html><html><body>Pneumo fixture</body></html>";
@@ -29,7 +31,11 @@ afterAll(async () => {
   await rm(webDist, { recursive: true, force: true });
 });
 
-function fixture(overrides: NodeJS.ProcessEnv = {}, bucketOrigin?: string) {
+function fixture(
+  overrides: NodeJS.ProcessEnv = {},
+  bucketOrigin?: string,
+  uploadMode: UploadMode = bucketOrigin ? "direct" : "proxy",
+) {
   const lines: string[] = [];
   const destination = new Writable({
     write(chunk, _encoding, callback) {
@@ -50,11 +56,11 @@ function fixture(overrides: NodeJS.ProcessEnv = {}, bucketOrigin?: string) {
   let now = Date.parse("2026-01-01T00:00:00.000Z");
   const app = createApp({
     config,
-    storage: {},
+    storage: new MemoryStorage(bucketOrigin ? { bucketOrigin } : {}),
+    uploadMode,
     logger: createLogger("info", destination),
     clock: { now: () => (now += 5) },
     instanceState,
-    ...(bucketOrigin ? { bucketOrigin } : {}),
   });
   return { app, instanceState, lines };
 }
@@ -162,6 +168,18 @@ test("HTTP omits HSTS and CSP omits the bucket when storage supplies no origin",
   );
   await response.text();
 });
+
+test.each(["auto", "direct", "proxy"])(
+  "resolved proxy mode omits the bucket origin even when configured mode is %s",
+  async (mode) => {
+    const { app } = fixture({ UPLOAD_MODE: mode }, "https://test-bucket.objects.example", "proxy");
+    const response = await app.request("/");
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      "connect-src 'self' wss://pneumo.example;",
+    );
+    await response.text();
+  },
+);
 
 test("JSON body limit accepts exactly 128 KiB and rejects the next byte", async () => {
   const { app } = fixture();

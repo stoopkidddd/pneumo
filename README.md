@@ -43,9 +43,33 @@ mise exec -- node --env-file=.env.local apps/server/dist/index.js
 
 The server serves the built web app and `GET /api/health`. `WEB_DIST_DIR` defaults to
 `apps/web/dist`, resolved relative to the server rather than the current directory. Health reads
-the server package version; `initialized` remains false until setup is implemented. Storage is
-currently an injected interface stub: startup makes no bucket calls and does not wait for
-`minio-init`. Storage startup retries belong to ENG-249.
+the server package version; `initialized` remains false until setup is implemented.
+
+Server bucket access uses the `Storage` contract in `apps/server/src/storage/types.ts`.
+`S3Storage` is used at runtime; tests use `MemoryStorage` or an isolated MinIO instance.
+`S3_PREFIX` is a namespace: a nonempty value gets a trailing `/` if needed, and callers
+always use unprefixed keys. Listing is UTF-8 lexicographic; `maxKeys` controls page size,
+not the total number of results. Missing reads throw `StorageError` with code `NotFound`;
+missing heads return `null`. Conditional JSON creates use `{ ifNoneMatch: "*" }`.
+
+With `UPLOAD_MODE=auto`, startup applies and reads bucket CORS. Both calls must succeed
+to select direct uploads; otherwise one warning records the operation and safe error code,
+and uploads use proxy mode. A briefly missing bucket is retried for about ten seconds so
+`minio-init` can finish; other failures fall back immediately. Explicit `direct`/`proxy`
+skip detection. CSP includes the bucket origin only in the resolved direct mode.
+
+The shared storage contract runs against memory in `check:server` (no Docker) and against
+real MinIO with:
+
+```sh
+mise exec -- pnpm --filter @pneumo/server test:e2e
+```
+
+The integration runner starts and stops its own uniquely named MinIO container and creates
+the bucket. Set `PNEUMO_E2E_MINIO=native` to use installed `minio`/`mc` binaries instead.
+The pinned MinIO build provides global CORS via `MINIO_API_CORS_ALLOW_ORIGIN` but reports
+bucket `PutBucketCors` as unsupported, so auto detection selects proxy mode. Forced direct
+mode still permits signed PUT/GET when bucket CORS is configured externally.
 
 `check:server` also builds the server and launches the bundle with plain Node, an ephemeral port,
 and a temporary web fixture. It checks health, HTML serving, safe config failures, and SIGTERM

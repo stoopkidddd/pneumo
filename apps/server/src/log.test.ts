@@ -14,6 +14,8 @@ const CHILD_TOKEN = "fixed-child-binding-token";
 const PRESIGNED_SIGNATURE = "fixed-presigned-signature";
 const REQUEST_QUERY_SECRET = "fixed-request-query-secret";
 const ERROR_SECRET = "fixed-error-message-secret";
+const S3_ACCESS_KEY = "fixed-s3-access-key";
+const S3_SECRET_KEY = "fixed-s3-secret-key";
 
 function captureLogs() {
   const lines: string[] = [];
@@ -36,6 +38,10 @@ test("redacts structured request secrets without changing caller data", () => {
       authorization: LOWERCASE_AUTHORIZATION,
     },
     url: `/api/pushes?token=${REQUEST_QUERY_SECRET}`,
+    storageConfig: {
+      S3_ACCESS_KEY_ID: S3_ACCESS_KEY,
+      S3_SECRET_ACCESS_KEY: S3_SECRET_KEY,
+    },
     body: {
       token: TOKEN,
       authKey: AUTH_KEY,
@@ -86,6 +92,8 @@ test("redacts structured request secrets without changing caller data", () => {
     PRESIGNED_SIGNATURE,
     REQUEST_QUERY_SECRET,
     ERROR_SECRET,
+    S3_ACCESS_KEY,
+    S3_SECRET_KEY,
   ]) {
     expect(captured.includes(secret)).toBe(false);
   }

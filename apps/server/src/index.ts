@@ -3,15 +3,25 @@ import { createApp, systemClock } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { type ShutdownHook, shutdownServer } from "./http/shutdown.js";
 import { createLogger } from "./log.js";
+import { S3Storage } from "./storage/s3.js";
+import { resolveUploadMode } from "./storage/upload-mode.js";
 
 try {
   const config = loadConfig(process.env);
   const logger = createLogger(config.LOG_LEVEL);
-  const shutdownHooks: ShutdownHook[] = [];
+  const storage = new S3Storage(config);
+  const uploadMode = await resolveUploadMode({
+    storage,
+    mode: config.UPLOAD_MODE,
+    publicUrl: config.PUBLIC_URL,
+    logger,
+  });
+  const shutdownHooks: ShutdownHook[] = [() => storage.destroy()];
   const app = createApp({
     config,
     logger,
-    storage: {},
+    storage,
+    uploadMode,
     clock: systemClock,
     instanceState: { initialized: false },
   });
