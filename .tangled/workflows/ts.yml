@@ -1,5 +1,5 @@
 when:
-  # Probe (ENG-277): pull_request without a paths filter, to learn whether PR paths filters match.
+  # PR paths filters do not match on this spindle; run every PR.
   - event: pull_request
     branch: main
   - event: push
@@ -22,7 +22,7 @@ when:
 
 engine: nixery
 dependencies:
-  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, python3, bash, coreutils, git, gnutar, zstd]
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, python3, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, gnutar, zstd]
 environment:
   # Nixery shares only the workspace between steps, not the home directory.
   PNPM_HOME: /tangled/workspace/.pnpm

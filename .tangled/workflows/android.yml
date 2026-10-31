@@ -2,7 +2,10 @@
 # lint/JVM/screenshots are not provisioned on the hosted spindle.
 # spotlessCheck and detekt were exercised without an SDK; keep this useful subset.
 when:
-  - event: [push, pull_request]
+  # PR paths filters do not match on this spindle; run every PR.
+  - event: pull_request
+    branch: main
+  - event: push
     branch: main
     paths:
       - "apps/android/**"
@@ -13,7 +16,7 @@ when:
 
 engine: nixery
 dependencies:
-  nixpkgs: [jdk17, bash, coreutils, findutils, gnused, git, curl, unzip, gnutar, zstd]
+  nixpkgs: [jdk17, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, curl, unzip, gnutar, zstd]
 environment:
   # Workspace-backed, restored cache; never point Gradle at a temporary directory.
   GRADLE_USER_HOME: /tangled/workspace/.gradle

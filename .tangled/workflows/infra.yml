@@ -1,5 +1,8 @@
 when:
-  - event: [push, pull_request]
+  # PR paths filters do not match on this spindle; run every PR.
+  - event: pull_request
+    branch: main
+  - event: push
     branch: main
     paths:
       - "scripts/**"
@@ -26,7 +29,7 @@ when:
 engine: nixery
 dependencies:
   # Compose validation uses only the client; no Docker daemon or microVM needed.
-  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, findutils, git, docker-client, hadolint, shellcheck, gnutar, zstd]
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, docker-client, hadolint, shellcheck, gnutar, zstd]
 environment:
   PNPM_HOME: /tangled/workspace/.pnpm
 cache:
