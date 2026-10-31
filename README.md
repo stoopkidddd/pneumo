@@ -52,4 +52,8 @@ and a temporary web fixture. It checks health, HTML serving, safe config failure
 shutdown. The shutdown hook list in `src/index.ts` is the registration point for the later
 WebSocket hub; hooks receive close code 1012, with a ten-second drain deadline.
 
+The injected `Clock.now()` returns Unix epoch milliseconds, matching `Date.now()`. Tests use
+epoch-millisecond fake clocks so timestamps and expiry calculations share the production unit.
+Request log durations are differences between clock readings, clamped to zero on backward jumps.
+
 License: MIT.

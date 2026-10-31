@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { createApp } from "./app.js";
+import { createApp, systemClock } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { type ShutdownHook, shutdownServer } from "./http/shutdown.js";
 import { createLogger } from "./log.js";
@@ -12,7 +12,7 @@ try {
     config,
     logger,
     storage: {},
-    clock: { now: () => performance.now() },
+    clock: systemClock,
     instanceState: { initialized: false },
   });
   const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => {

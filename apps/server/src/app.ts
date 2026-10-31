@@ -14,8 +14,11 @@ import { createRequestLogger } from "./log.js";
 export interface Storage {}
 
 export interface Clock {
+  /** Returns Unix epoch milliseconds. */
   now(): number;
 }
+
+export const systemClock: Clock = { now: () => Date.now() };
 
 export interface InstanceState {
   initialized: boolean;

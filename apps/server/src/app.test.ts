@@ -6,7 +6,7 @@ import { ErrorBody } from "@pneumo/protocol";
 import { HTTPException } from "hono/http-exception";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
-import { createApp } from "./app.js";
+import { createApp, systemClock } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
 
@@ -47,7 +47,7 @@ function fixture(overrides: NodeJS.ProcessEnv = {}, bucketOrigin?: string) {
     ...overrides,
   });
   const instanceState = { initialized: false };
-  let now = 0;
+  let now = Date.parse("2026-01-01T00:00:00.000Z");
   const app = createApp({
     config,
     storage: {},
@@ -58,6 +58,10 @@ function fixture(overrides: NodeJS.ProcessEnv = {}, bucketOrigin?: string) {
   });
   return { app, instanceState, lines };
 }
+
+test("the production clock returns Unix epoch milliseconds", () => {
+  expect(Math.abs(systemClock.now() - Date.now())).toBeLessThan(2_000);
+});
 
 test("health reports package version and live injected initialization state", async () => {
   const { app, instanceState } = fixture();
