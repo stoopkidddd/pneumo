@@ -405,6 +405,36 @@ describe("WebSocket authentication and replay", () => {
     await expectClose(client, 4401);
   });
 
+  test("keeps an on-time hello connected while authentication exceeds ten seconds", async () => {
+    const target = await fixture();
+    const client = await target.connect();
+    const originalAuthenticate = target.devices.authenticate.bind(target.devices);
+    const authStarted = Promise.withResolvers<void>();
+    const releaseAuth = Promise.withResolvers<void>();
+    vi.spyOn(target.devices, "authenticate").mockImplementationOnce(async (token) => {
+      authStarted.resolve();
+      await releaseAuth.promise;
+      return originalAuthenticate(token);
+    });
+    client.sendJson(hello(target.owner.token));
+    await withTimeout(authStarted.promise, "Authentication did not start");
+
+    target.timers.advance(10_001);
+    await settle();
+    expect(client.socket.readyState, "Slow authentication closed an on-time hello").toBe(
+      WebSocket.OPEN,
+    );
+    expect(client.pendingFrames, "Pending authentication sent a server frame").toBe(0);
+    releaseAuth.resolve();
+
+    expect(await client.nextFrame()).toEqual({
+      type: "ready",
+      deviceId: target.owner.device.id,
+      serverTime: timestamp(10_001),
+    });
+    expect(await client.nextFrame()).toEqual({ type: "replay_done" });
+  });
+
   test("rejects bad and revoked credentials without sending ready", async () => {
     const target = await fixture();
     const bad = await target.connect();
@@ -431,8 +461,10 @@ describe("WebSocket authentication and replay", () => {
     ).toBe(false);
   });
 
-  test("sends ready with the authenticated device and clock time, then an empty replay", async () => {
+  test("sends only ready and replay_done for a null cursor despite populated history", async () => {
     const target = await fixture();
+    addPush(target, pushId(90), timestamp(0));
+    addPush(target, pushId(91), timestamp(1));
     const client = await target.connect();
 
     const ready = await authenticate(client, target.owner.token);
@@ -442,6 +474,7 @@ describe("WebSocket authentication and replay", () => {
       deviceId: target.owner.device.id,
       serverTime: timestamp(0),
     });
+    await settle();
     expect(client.pendingFrames, "Null cursor replay sent an unexpected push").toBe(0);
   });
 
@@ -751,6 +784,24 @@ describe("WebSocket heartbeat, shutdown, and resource limits", () => {
 });
 
 describe("WebSocket protocol errors", () => {
+  test.each(["whole", "fragmented"] as const)(
+    "closes an oversized %s message with 1009 before hello",
+    async (delivery) => {
+      const target = await fixture();
+      const client = await target.connect();
+      const payload = "x".repeat(65_537);
+      if (delivery === "fragmented") {
+        client.socket.send(payload.slice(0, 32_768), { fin: false });
+        client.socket.send(payload.slice(32_768), { fin: true });
+      } else {
+        client.socket.send(payload);
+      }
+
+      await expectClose(client, 1009);
+      expect(client.pendingFrames, "Oversized unauthenticated message received a frame").toBe(0);
+    },
+  );
+
   test("closes malformed JSON, binary, invalid-schema, unknown, and pre-hello pong frames with 4400", async () => {
     const target = await fixture();
     const cases: Array<(client: TestClient) => void> = [

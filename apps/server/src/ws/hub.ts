@@ -17,6 +17,7 @@ import type { PushIndex } from "../index-store/index.js";
 import { systemWebSocketTimers, type WebSocketTimers } from "./timers.js";
 
 const MAX_BUFFERED_BYTES = 1_048_576;
+const MAX_PAYLOAD_BYTES = 65_536;
 const REPLAY_LIMIT = 200;
 const PRESENCE_DEBOUNCE_MS = 2_000;
 
@@ -42,7 +43,7 @@ interface Session {
 export function attachWebSocketHub(deps: HubDependencies): ShutdownHook {
   const { server, devices, pushes, events, clock, logger, pingSeconds } = deps;
   const timers = deps.timers ?? systemWebSocketTimers;
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
   const sessions = new Map<WebSocket, Session>();
   const counts = new Map<string, number>();
   const presenceTimers = new Map<string, () => void>();
@@ -149,13 +150,12 @@ export function attachWebSocketHub(deps: HubDependencies): ShutdownHook {
   ): Promise<void> {
     try {
       const device = await devices.authenticate(hello.token);
-      // Authentication can yield to revocation, shutdown, timeout, or disconnect.
+      // Authentication can yield to revocation, shutdown, or disconnect.
       if (stopping || socket.readyState !== WebSocket.OPEN) return;
       if (device === null || devices.get(device.id) === null) {
         socket.close(4401);
         return;
       }
-      session.cancelHello();
       session.deviceId = device.id;
       session.authenticating = false;
       updatePresence(device.id, 1);
@@ -214,6 +214,7 @@ export function attachWebSocketHub(deps: HubDependencies): ShutdownHook {
         return;
       }
       if (frame.type === "hello" && session.deviceId === null && !session.authenticating) {
+        session.cancelHello();
         session.authenticating = true;
         void authenticate(socket, session, frame);
       } else if (frame.type === "pong" && (session.deviceId !== null || session.authenticating)) {

@@ -101,15 +101,18 @@ seconds, reconciliation merges unknown records from the first 100 bucket keys an
 `push` events. The WebSocket hub consumes server events; Web Push sending is not implemented yet.
 
 `GET /api/ws` upgrades on the same HTTP server. Send a protocol `hello` within ten seconds;
-it authenticates through the same token-hash registry as HTTP bearer requests. `ready` is
-followed by at most 200 newer pushes, oldest first, then `replay_done`. An unknown cursor
-or more than 200 newer pushes produces `resync` instead; `since: null` skips replay.
+the deadline stops when a schema-valid hello arrives, so slow authentication does not
+sign the client out. Authentication uses the same token-hash registry as HTTP bearer requests.
+`ready` is followed by at most 200 newer pushes, oldest first, then `replay_done`.
+An unknown cursor or more than 200 newer pushes produces `resync` instead;
+`since: null` skips replay.
 Push, deletion and device events reach every authenticated socket, regardless of targeting.
 Device revocation broadcasts `device_removed` before closing that device's sockets with 4401.
 
 The hub sends application-level `ping` frames every `WS_PING_SECONDS` (default 60).
 Clients must send JSON `pong` frames; two missed response windows terminate the socket.
 Other client frame types, repeated hello, binary frames and invalid JSON close with 4400.
+Incoming messages over 64 KiB close with 1009 before JSON parsing, including fragmented messages.
 Sockets buffering more than 1 MiB are terminated so clients can reconnect and replay.
 Device DTO presence reflects authenticated socket counts immediately; presence transitions
 broadcast `device_updated` after a two-second debounce. Presence is not stored in the bucket.
