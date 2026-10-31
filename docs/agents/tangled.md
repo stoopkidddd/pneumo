@@ -232,7 +232,7 @@ Round three reproduced all three failures before editing in disposable `linux/am
 
 The diagnosis was confirmed with `patchelf`: the Biome 2.6.4 executable exists but requests `/lib64/ld-linux-x86-64.so.2`, absent from the Nixery filesystem. Nix's Node and bash instead encode a glibc interpreter under `/nix/store`. A missing ELF interpreter makes execution fail even when the executable file exists.
 
-`scripts/ci/run-nixery.sh` now wraps **every workflow step**, because Nixery starts a fresh container for each step. On x86-64 Linux with `/nix/store`, it derives the glibc loader from Node (or bash when Node is absent) with `patchelf`; only when the standard loader is missing does it create that symlink inside the container. It exports only the store directories containing GCC runtime libraries in `LD_LIBRARY_PATH`; the linked loader finds its own libc. Never put a glibc directory on `LD_LIBRARY_PATH`: on the hosted spindle, base-image tools such as `/bin/sh` use an older glibc than the `nixpkgs/nixpkgs-unstable` packages, and the first hosted run failed with `/bin/sh: symbol lookup error: … glibc-2.44 … libc.so.6: undefined symbol: __pointer_chk_guard, version GLIBC_PRIVATE` (exit 127). Public Nixery serves one channel, so local containers can't reproduce that mismatch. Explicit `glibc` and `gcc-unwrapped.lib` dependencies supply libc, `libgcc_s.so.1`, and `libstdc++.so.6`. Using store paths avoids depending on the public image's `/lib` symlink forest, which custom-registry dependencies need not populate. The wrapper does not patch node_modules, change Biome 2.6.4, or alter the Mac's loader paths.
+`scripts/ci/run-nixery.sh` now wraps **every workflow step**, because Nixery starts a fresh container for each step. On x86-64 Linux with `/nix/store`, it derives the glibc loader from Node (or bash when Node is absent) with `patchelf`; only when the standard loader is missing does it create that symlink inside the container. It exports only the store directories containing GCC runtime libraries in `LD_LIBRARY_PATH`; the linked loader finds its own libc. Never put a glibc directory on `LD_LIBRARY_PATH`: on the hosted spindle, base-image tools such as `/bin/sh` use an older glibc than the `nixpkgs/nixpkgs-unstable` packages, and the hosted run of `954d004` failed with `/bin/sh: symbol lookup error: … glibc-2.44 … libc.so.6: undefined symbol: __pointer_chk_guard, version GLIBC_PRIVATE` (exit 127). Public Nixery serves one channel, so local containers can't reproduce that mismatch. Explicit `glibc` and `gcc-unwrapped.lib` dependencies supply libc, `libgcc_s.so.1`, and `libstdc++.so.6`. Using store paths avoids depending on the public image's `/lib` symlink forest, which custom-registry dependencies need not populate. The wrapper does not patch node_modules, change Biome 2.6.4, or alter the Mac's loader paths.
 
 The original `jdk17` image contains `/lib/openjdk/bin/java`, not `/bin/java`; Java was installed but off `PATH`. Android now requests `jdk17_headless`, sets `JAVA_HOME=/lib/openjdk`, and uses the same wrapper to prepend `$JAVA_HOME/bin` for both steps. `GRADLE_USER_HOME` remains `/tangled/workspace/.gradle`.
 
@@ -255,16 +255,29 @@ The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ENG-277 adds three `nixery` workflows, triggered on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all three workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
 
-| Lane | CI or local-only | Workflow / reason | Hosted warm duration |
+| Lane | CI or local-only | Workflow / reason | Hosted duration (2026-10-31) |
 | -- | -- | -- | -- |
-| pneumo-protocol | CI (pending first run) | `ts.yml`: full `check:protocol`, including the Python crypto cross-check | Pending lead measurement |
-| pneumo-server | CI (pending first run) | `ts.yml`: full `check:server` | Pending lead measurement |
-| pneumo-web | CI (pending first run) | `ts.yml`: full `check:web`, including the production build | Pending lead measurement |
-| pneumo-android | local-only (full lane); static subset CI (pending first run) | `android.yml`: only `spotlessCheck detekt`; SDK 37.2 / build-tools 37.0.0, lint, JVM tests and screenshots remain local | Pending lead measurement (subset only) |
-| pneumo-infra | CI (pending first run) | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | Pending lead measurement |
-| pneumo-brand | CI (pending first run) | `infra.yml`: full `check:brand`, sequential after infra; PNG byte identity passed in public amd64 Nixery | Pending lead measurement |
+| pneumo-protocol | CI | `ts.yml`: full `check:protocol`, including the Python crypto cross-check | step 10 s |
+| pneumo-server | CI | `ts.yml`: full `check:server` | step 11 s |
+| pneumo-web | CI | `ts.yml`: full `check:web`, including the production build | step 3 s |
+| pneumo-android | **local-only** (full lane); static subset in CI | `android.yml`: only `spotlessCheck detekt`. The hosted spindle has no Android SDK (37.2 / build-tools 37.0.0), so lint, JVM tests and screenshots stay local. Run `mise run check:android` before merging any Android change. | workflow 51 s (Gradle step 41 s, including the Gradle 9.8.2 download) |
+| pneumo-infra | CI | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | step 3 s |
+| pneumo-brand | CI | `infra.yml`: full `check:brand`, after infra; all generated outputs matched git on the hosted Linux runner | step 2 s |
 
-“Pending first run” means the first **green hosted** run, not the first trigger or a successful local container run.
+Measured on PR #9 (first green hosted run, `986b257`, pnpm and Gradle caches empty):
+
+| Workflow | Total | Main costs |
+| -- | -- | -- |
+| `ts.yml` | 1 m 2 s | Nix dependency install 26 s, `pnpm install` 7 s, checks 24 s |
+| `infra.yml` | 42 s | Nix dependency install 26 s, `pnpm install` 7 s, checks 5 s |
+| `android.yml` | 51 s | Gradle step 41 s |
+| **Pipeline** | **2 m 35 s** | The workflows run one after another, so the pipeline is their sum. |
+
+The next run (`37db504`, caches saved) took 2 m 24 s. "Install custom dependencies" (the Nix packages) is about 26 s on every run, and no `cache:` entry covers it.
+
+**CI can fail (proven):** `37db504` added a test that fails on purpose (`apps/server/src/ci-red.test.ts`). `ts.yml` failed at `check:server` with exit 1, and `infra.yml` and `android.yml` passed. The next round dropped that commit and the pipeline went green again.
+
+**Log viewer quirk:** the hosted log for a Node check step can show only its first output line (for example Biome's `Checked … files`) and not vitest's results. Read the step status (Passed/Failed, exit code) rather than looking for test counts.
 
 ### Reproduce CI locally in Nixery
 
@@ -337,7 +350,7 @@ The first successful Android container run took **276.34 s including its image p
 
 An additional container probe hid the public image's `/lib` forest and removed its now-dangling `/lib64` alias. The final store-path-based wrapper still ran Biome 2.6.4, the rolldown Vite build, and the resvg brand check: **exit 0, 17.54 s**. This checks native loading without relying on the public image's library symlinks.
 
-These are **local Nixery measurements, not hosted durations or proof of the hosted timeout fit**. The public package revision differs from Tangled's, and the local containers were emulated. The lead must still measure the complete hosted pipeline, including queued time, and retain the full Android lane as a local merge gate.
+These are **local Nixery measurements, not hosted durations or proof of the hosted timeout fit**. The public package revision differs from Tangled's, and the local containers were emulated. The hosted measurements are in the CI coverage table. The full Android lane stays a local merge gate.
 
 
 For a cache-only warm rerun, make fresh clones and restore **only** `.pnpm-store`/`.pnpm` for TS/infra and `.gradle/caches`/`.gradle/wrapper` for Android from the previous copies. Do not carry node_modules, project build outputs, or Gradle project task history across clones. The Gradle home stays at the workflow's workspace path, with no SDK configuration.
@@ -362,7 +375,7 @@ Use `--rm` for containers. Remove the disposable copies afterward, and remove on
 2. If Linux brand output differs, mark full `check:brand` local-only and remove its CI step; do not re-record generated assets merely to make Linux green. Keep the useful infra workflow.
 3. If any group cannot fit the observed hosted limit (including queue time), mark the affected lane local-only with the measured reason and retain a workflow only for a useful subset.
 4. Push a deliberately failing check commit, observe a red pipeline, then revert it in the next round and observe green. This lead-only acceptance test is separate from the local validator failure proof.
-5. Before merging, run full `mise run check:android` locally and every lane still marked pending or local-only. e2e coverage is outside ENG-277.
+5. Before merging, run full `mise run check:android` locally and every lane marked local-only. e2e coverage is outside ENG-277.
 
 
 ## Known Tangled quirks
