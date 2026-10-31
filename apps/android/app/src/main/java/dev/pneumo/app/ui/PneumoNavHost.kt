@@ -9,9 +9,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,16 +19,14 @@ import dev.pneumo.app.BuildConfig
 import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.ui.screens.ConfirmScreen
 import dev.pneumo.app.ui.screens.ConfirmUiState
-import dev.pneumo.app.ui.screens.MainShell
-import dev.pneumo.app.ui.screens.MainTab
-import dev.pneumo.app.ui.screens.ShellUiState
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun PneumoNavHost(
     viewModel: PairingViewModel,
     connectionState: StateFlow<ConnectionState>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    notifications: NotificationUiState = NotificationUiState()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val connection by connectionState.collectAsStateWithLifecycle()
@@ -77,11 +72,10 @@ fun PneumoNavHost(
                 )
             }
             composable(AppDestination.Home.name) {
-                var tab by rememberSaveable { mutableStateOf(MainTab.Home) }
-                MainShell(
-                    tab = tab,
-                    state = ShellUiState(state.origin, state.busy, state.error, connection),
-                    onTab = { tab = it },
+                HomeEntry(
+                    state = state,
+                    connection = connection,
+                    notifications = notifications,
                     onSignOut = viewModel::signOut
                 )
             }

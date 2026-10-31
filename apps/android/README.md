@@ -174,13 +174,37 @@ fetching earlier history. Deleting the cursor push does not remove this bound.
 Cursor ordering uses server time, not sender-generated UUID order. Heartbeats run
 independently of ordered frame application and HTTP catch-up.
 
-`PushSink` currently logs only push ids. Only non-self pushes targeted to this
+`PushSink` is implemented by `PushNotifier`. Only non-self pushes targeted to this
 device or all devices are claimed. The durable `notified` claim precedes the sink
 call, preventing duplicate calls across replay and restart. SQLite and an external
 notification side effect cannot be atomic: process death between claim and sink
-can lose that notification. The notification implementation remains a separate
-issue.
+can lose that notification.
 
+## Push notifications
+
+The high-importance `pushes` channel renders notes with expanded text, links with
+their URL, and files with their name, size and caption. Payloads are decrypted
+only while building the notification; no plaintext history or payload cache is
+written. Tagged notification ids and action identities remain distinct even when
+push-id hashes collide. A group summary appears at three visible push children
+and is reconciled after Copy, Open, body taps, dismissals and `push_deleted`.
+
+Copy uses an immutable, non-exported broadcast and cancels the push notification.
+Only API 32 and earlier show a custom "Copied" toast. Open uses an immutable
+activity intent with `ACTION_VIEW` and the HTTP(S) URL. The non-exported
+`OpenActivity` cancels the notification before forwarding to the browser: Android
+does not apply notification auto-cancel to action buttons. The dispatcher rejects
+non-HTTP(S) URLs; protocol payload validation already excludes them.
+
+Download sends `dev.pneumo.app.notify.DOWNLOAD` to `DownloadRequestedReceiver`
+with the `pushId` extra. Until the files issue replaces that handler, it logs only
+the push id and shows "Coming soon". Body taps pass `pushId` through MainActivity,
+navigation and `ShellUiState`, selecting Home without replaying the tab selection
+on recreation. The Home issue will consume this target to scroll the history.
+
+Notification permission denial skips delivery without decrypting. Settings
+refreshes app and channel permission state on resume and offers "Open notification
+settings" when notifications are off.
 
 ## Screenshots
 
@@ -209,6 +233,9 @@ fixtures. The light/dark `main-shell-settings`, `main-shell-settings-busy`, and
 `main-shell-sign-out-error` goldens were intentionally re-recorded for the live
 status row.
 
+ENG-263 adds the light/dark `main-shell-settings-notifications-off` goldens, shared
+with the notifications-off Compose preview. Existing screen goldens are unchanged.
+
 Only record when intentionally changing the expected UI:
 
 ```sh
@@ -227,10 +254,11 @@ and lint/JUnit reports stay under `build/`.
 with no Google Play Services dependency. Gradle downloads the matching system
 image and creates/boots/stops the device. Hardware virtualization must be
 available. Run only one Android emulator/managed-device suite at a time on this
-Mac. Tests cover initial Pair, valid and invalid deep-link routing, and selected
-Settings-tab restoration after Activity recreation. The SecureStore smoke uses
-the real Android Keystore, including reopening the wrapper and clearing both
-credentials. Turbine/JVM tests additionally cover key mismatch deletion/wipe,
+Mac. Tests cover initial Pair, valid and invalid deep-link routing, selected
+Settings-tab restoration, cold/warm notification navigation, and the denied
+notification permission state. The SecureStore smoke uses the real Android
+Keystore, including reopening the wrapper and clearing both credentials.
+Turbine/JVM tests additionally cover key mismatch deletion/wipe,
 expired codes, consumed-code retries, replacement ViewModels, sign-out and
 onboarding persistence. QR analyzer tests decode padded luminance frames and
 verify frame ownership on unreadable input.

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_notifications_off">Notifications are off</string>
+    <string name="shell_notifications_off_body">Turn on app and Pushes notifications in Android settings so Pneumo can show incoming pushes.</string>
+    <string name="shell_open_notification_settings">Open notification settings</string>
+</resources>

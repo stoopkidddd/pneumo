@@ -1,5 +1,7 @@
 package dev.pneumo.app.ui.screens
 
+import android.content.Intent
+import android.provider.Settings as AndroidSettings
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.pneumo.app.R
@@ -45,7 +48,14 @@ enum class MainTab {
     Settings
 }
 
-data class ShellUiState(val origin: String, val busy: Boolean, val error: String?, val connection: ConnectionState)
+data class ShellUiState(
+    val origin: String,
+    val busy: Boolean,
+    val error: String?,
+    val connection: ConnectionState,
+    val notificationsEnabled: Boolean = true,
+    val pushId: String? = null
+)
 
 @Composable
 fun MainShell(
@@ -55,8 +65,7 @@ fun MainShell(
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val (origin, busy, error) = state
-    val authority = remember(origin) { originAuthority(origin) }
+    val authority = remember(state.origin) { originAuthority(state.origin) }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -95,9 +104,7 @@ fun MainShell(
                 MainTab.Settings ->
                     SettingsTab(
                         authority = authority,
-                        busy = busy,
-                        error = error,
-                        connection = state.connection,
+                        state = state,
                         onSignOut = onSignOut
                     )
             }
@@ -149,16 +156,13 @@ private fun EmptyTab(title: String, body: String) {
 }
 
 @Composable
-private fun SettingsTab(
-    authority: String,
-    busy: Boolean,
-    error: String?,
-    connection: ConnectionState,
-    onSignOut: () -> Unit
-) {
+private fun SettingsTab(authority: String, state: ShellUiState, onSignOut: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Text(text = stringResource(R.string.shell_settings), style = MaterialTheme.typography.headlineMedium)
-        ConnectionStatus(connection)
+        ConnectionStatus(state.connection)
+        if (!state.notificationsEnabled) {
+            NotificationSettingsRecovery()
+        }
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.medium,
@@ -176,12 +180,12 @@ private fun SettingsTab(
                 Text(text = authority, style = MaterialTheme.typography.bodyLarge)
             }
         }
-        if (error != null) {
-            ErrorMessage(error)
+        if (state.error != null) {
+            ErrorMessage(state.error)
         }
         OutlinedButton(
             onClick = onSignOut,
-            enabled = !busy,
+            enabled = !state.busy,
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -197,7 +201,7 @@ private fun SettingsTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (busy) {
+                if (state.busy) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         color = LocalContentColor.current,
@@ -206,6 +210,37 @@ private fun SettingsTab(
                 }
                 Text(stringResource(R.string.shell_sign_out))
             }
+        }
+    }
+}
+
+@Composable
+private fun NotificationSettingsRecovery() {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        WarningMessage(stringResource(R.string.shell_notifications_off))
+        Text(
+            text = stringResource(R.string.shell_notifications_off_body),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        OutlinedButton(
+            onClick = {
+                context.startActivity(
+                    Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
+                )
+            },
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            colors =
+                ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
+        ) {
+            Text(stringResource(R.string.shell_open_notification_settings))
         }
     }
 }

@@ -1,6 +1,5 @@
 package dev.pneumo.app.sync
 
-import android.util.Log
 import dev.pneumo.app.data.SyncCursorStore
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.PushEntity
@@ -21,16 +20,8 @@ import dev.pneumo.app.protocol.ServerFrame
 
 fun interface PushSink {
     suspend fun accept(push: PushDTO)
-}
 
-class LoggingPushSink : PushSink {
-    override suspend fun accept(push: PushDTO) {
-        Log.i(TAG, "Push ready for notification: ${push.id}")
-    }
-
-    private companion object {
-        const val TAG = "PneumoSync"
-    }
+    suspend fun cancel(pushId: String) = Unit
 }
 
 class SyncEngine(
@@ -48,7 +39,10 @@ class SyncEngine(
         when (frame) {
             is PushFrame -> applyPush(frame.push)
 
-            is PushDeletedFrame -> pushes.delete(frame.id)
+            is PushDeletedFrame -> {
+                pushes.delete(frame.id)
+                sink.cancel(frame.id)
+            }
 
             is DeviceAddedFrame -> devices.upsert(frame.device.toEntity())
 

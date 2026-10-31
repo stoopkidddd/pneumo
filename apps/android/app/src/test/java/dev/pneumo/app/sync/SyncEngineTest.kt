@@ -1,13 +1,17 @@
 package dev.pneumo.app.sync
 
+import android.Manifest
 import android.app.Application
+import android.app.NotificationManager
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import dev.pneumo.app.crypto.PushCrypto
 import dev.pneumo.app.data.SyncCursorStore
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.SyncStateEntity
 import dev.pneumo.app.data.db.toEntity
 import dev.pneumo.app.net.PushApi
+import dev.pneumo.app.notify.PushNotifier
 import dev.pneumo.app.protocol.CreatePushRequest
 import dev.pneumo.app.protocol.DeviceAddedFrame
 import dev.pneumo.app.protocol.DeviceDTO
@@ -15,6 +19,7 @@ import dev.pneumo.app.protocol.DeviceRemovedFrame
 import dev.pneumo.app.protocol.DeviceUpdatedFrame
 import dev.pneumo.app.protocol.Envelope
 import dev.pneumo.app.protocol.ListPushesResponse
+import dev.pneumo.app.protocol.NotePayload
 import dev.pneumo.app.protocol.Platform
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.protocol.PushDeletedFrame
@@ -22,6 +27,7 @@ import dev.pneumo.app.protocol.PushFrame
 import dev.pneumo.app.protocol.ReadyFrame
 import dev.pneumo.app.protocol.ReplayDoneFrame
 import dev.pneumo.app.protocol.ResyncFrame
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -32,6 +38,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -96,6 +103,27 @@ class SyncEngineTest {
 
         engine.apply(PushFrame("push", push(P1, source = OTHER_DEVICE)))
         engine.apply(PushDeletedFrame("push_deleted", P1))
+        assertNull(database.pushes().find(P1))
+    }
+
+    @Test
+    fun deletedFrameCancelsTheVisiblePushNotification() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val key = SecretKeySpec(ByteArray(32) { 7 }, "AES")
+        val notifier = PushNotifier(context, OWN_DEVICE, key)
+        val engine = engine(sink = notifier)
+        val encrypted = push(P1).copy(
+            envelope = PushCrypto.encrypt(key, P1, NotePayload(body = "Delete this note"))
+        )
+        val manager = context.getSystemService(NotificationManager::class.java)
+
+        engine.apply(PushFrame("push", encrypted))
+        assertEquals(listOf(P1), manager.activeNotifications.map { it.tag })
+
+        engine.apply(PushDeletedFrame("push_deleted", P1))
+
+        assertTrue(manager.activeNotifications.isEmpty())
         assertNull(database.pushes().find(P1))
     }
 

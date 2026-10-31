@@ -31,6 +31,7 @@ enum class ScreenPreviewCase(val fileName: String) {
     MainShellDevices("main-shell-devices"),
     MainShellSettings("main-shell-settings"),
     MainShellSettingsBusy("main-shell-settings-busy"),
+    MainShellSettingsNotificationsOff("main-shell-settings-notifications-off"),
     MainShellSignOutError("main-shell-sign-out-error")
 }
 
@@ -140,7 +141,8 @@ private fun ShellPreview(fixture: ScreenPreviewCase) {
             } else {
                 null
             },
-            connection = ConnectionState.Connected
+            connection = ConnectionState.Connected,
+            notificationsEnabled = fixture != ScreenPreviewCase.MainShellSettingsNotificationsOff
         ),
         onTab = {},
         onSignOut = {}

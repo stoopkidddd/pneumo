@@ -2,6 +2,7 @@ package dev.pneumo.app
 
 import android.content.Context
 import android.os.Build
+import dev.pneumo.app.crypto.deriveKeys
 import dev.pneumo.app.data.PairingApiFactory
 import dev.pneumo.app.data.PairingRepository
 import dev.pneumo.app.data.SecureCredentialStore
@@ -19,8 +20,8 @@ import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.net.ws.OkHttpWsTransport
 import dev.pneumo.app.net.ws.WsClient
 import dev.pneumo.app.net.ws.WsSessionConfig
+import dev.pneumo.app.notify.PushNotifier
 import dev.pneumo.app.service.ConnectionService
-import dev.pneumo.app.sync.LoggingPushSink
 import dev.pneumo.app.sync.SyncEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,17 +78,22 @@ class AppContainer(context: Context) {
         connectionJob = scope.launch {
             val metadata = sessions.read()
             val stored = credentials.read()
-            stored?.masterKey?.fill(0)
             if (stored == null || metadata.origin == null || metadata.deviceId == null) {
+                stored?.masterKey?.fill(0)
                 ConnectionService.stop(applicationContext)
                 return@launch
+            }
+            val contentKey = try {
+                deriveKeys(stored.masterKey).contentKey
+            } finally {
+                stored.masterKey.fill(0)
             }
             val engine = SyncEngine(
                 database,
                 ApiClient(metadata.origin, stored.token, httpClient),
                 cursor,
                 metadata.deviceId,
-                LoggingPushSink()
+                PushNotifier(applicationContext, metadata.deviceId, contentKey)
             )
             val network = AndroidNetworkMonitor(applicationContext)
             try {
