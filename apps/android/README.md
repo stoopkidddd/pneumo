@@ -113,6 +113,9 @@ check in constant time, then saves verified credentials in `SecureStore`.
 Post-claim retries reuse the claimed token rather than claiming a consumed code.
 Application-scoped pending claims can be resumed by a replacement ViewModel;
 a different code first removes the previous unverified device.
+Restoration finishes before a new link is considered; an existing paired session
+ignores incoming pairing links. Recreated and history launches do not replay VIEW
+intents. Consumed action/data are replaced while preserving launch identity.
 
 `SessionPreferences` stores the server origin, own device id and one-time
 onboarding completion separately from encrypted credentials. Startup requires a
@@ -120,6 +123,10 @@ complete credential/metadata pair, then chooses Onboarding or Home. Notification
 permission is requested on API 33+, followed by the battery-exemption request;
 both may be skipped with warnings. Completion survives sign-out. Home and Devices
 remain placeholders; Settings deletes this device before wiping the local session.
+
+`ScreenFrame` owns safe-drawing padding inside its background Surface. The main
+shell consumes Scaffold padding before applying any remaining safe-drawing insets,
+so system bars are not counted twice and inset regions retain the canvas color.
 
 The debug-only network security configuration permits cleartext only to exact
 `10.0.2.2` and `localhost` hosts. Release retains `usesCleartextTraffic="false"`,
@@ -136,11 +143,14 @@ entry or project-wide rule disable was added.
 `ScreenPreviews` supplies the same fixture data to Compose `@Preview` and
 `PneumoScreensScreenshotTest`, using Robolectric API 34 native graphics, a fixed
 360×800 dp viewport and xhdpi. Goldens live in `app/src/test/screenshots/debug/`.
+The camera-granted fixture renders the framed preview using its default empty
+`cameraPreview` slot; previews do not start a camera.
 
-ENG-253 intentionally replaces the two scaffold goldens with 36 screen goldens.
+ENG-253 intentionally replaces the two scaffold goldens with 38 screen goldens.
 Each base name below has both `-light.png` and `-dark.png` variants:
 
-- Pair: `pair-idle`, `pair-camera-denied`, `pair-paste-link`, `pair-invalid-error`.
+- Pair: `pair-idle`, `pair-camera-granted`, `pair-camera-denied`, `pair-paste-link`,
+  `pair-invalid-error`.
 - Confirm: `confirm-https`, `confirm-non-https`, `confirm-claiming`,
   `confirm-retryable-error`, `confirm-error`.
 - Onboarding: `onboarding-notifications`, `onboarding-battery`, `onboarding-done`,
@@ -173,6 +183,8 @@ credentials. Turbine/JVM tests additionally cover key mismatch deletion/wipe,
 expired codes, consumed-code retries, replacement ViewModels, sign-out and
 onboarding persistence. QR analyzer tests decode padded luminance frames and
 verify frame ownership on unreadable input.
+Robolectric lifecycle cases cover consumed-link recreation, saved task bundles,
+history launches and stored-session precedence over cold and warm foreign links.
 
 ATDs disable drawing by default and omit Settings/SystemUI. For a manual screenshot
 smoke, enable drawing with `adb shell setprop debug.hwui.drawing_enabled 1` and

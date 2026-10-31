@@ -42,28 +42,28 @@ class PairingViewModel(private val pairingRepository: PairingRepository) : ViewM
 
     fun openLink(value: String) {
         val current = mutableState.value
-        if (
-            current.busy ||
-            (current.destination != AppDestination.Loading && current.destination != AppDestination.Pair)
-        ) {
-            return
-        }
-        restoreJob.cancel()
-        val parsed = try {
-            PairingUri.parse(value)
-        } catch (_: IllegalArgumentException) {
-            pairingData = null
+        if (!restoreJob.isCompleted) {
+            viewModelScope.launch {
+                restoreJob.join()
+                openLink(value)
+            }
+        } else if (!current.busy && current.destination == AppDestination.Pair) {
+            val parsed = try {
+                PairingUri.parse(value)
+            } catch (_: IllegalArgumentException) {
+                pairingData = null
+                mutableState.value = PairingState(
+                    destination = AppDestination.Pair,
+                    error = INVALID_LINK_MESSAGE
+                )
+                return
+            }
+            pairingData = parsed
             mutableState.value = PairingState(
-                destination = AppDestination.Pair,
-                error = INVALID_LINK_MESSAGE
+                destination = AppDestination.Confirm,
+                origin = parsed.origin
             )
-            return
         }
-        pairingData = parsed
-        mutableState.value = PairingState(
-            destination = AppDestination.Confirm,
-            origin = parsed.origin
-        )
     }
 
     fun confirm() {
@@ -78,7 +78,6 @@ class PairingViewModel(private val pairingRepository: PairingRepository) : ViewM
         mutableState.value = mutableState.value.copy(busy = true, error = null, retryable = false)
         viewModelScope.launch {
             try {
-                restoreJob.join()
                 val result = pairingRepository.pair(pairing)
                 pairingData = null
                 mutableState.value = PairingState(

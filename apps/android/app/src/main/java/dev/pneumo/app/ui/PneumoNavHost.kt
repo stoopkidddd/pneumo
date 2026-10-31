@@ -3,8 +3,8 @@ package dev.pneumo.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,7 +37,7 @@ fun PneumoNavHost(viewModel: PairingViewModel, modifier: Modifier = Modifier) {
             launchSingleTop = true
         }
     }
-    Surface(modifier = modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         NavHost(navController = controller, startDestination = AppDestination.Loading.name) {
             composable(AppDestination.Loading.name) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -45,8 +45,7 @@ fun PneumoNavHost(viewModel: PairingViewModel, modifier: Modifier = Modifier) {
             composable(AppDestination.Pair.name) {
                 PairEntry(
                     error = state.error,
-                    onOpenLink = viewModel::openLink,
-                    modifier = Modifier.safeDrawingPadding()
+                    onOpenLink = viewModel::openLink
                 )
             }
             composable(AppDestination.Confirm.name) {
@@ -61,15 +60,13 @@ fun PneumoNavHost(viewModel: PairingViewModel, modifier: Modifier = Modifier) {
                         showInsecureWarning = !BuildConfig.DEBUG && !state.origin.startsWith("https://")
                     ),
                     onConfirm = viewModel::confirm,
-                    onBack = viewModel::backToPair,
-                    modifier = Modifier.safeDrawingPadding()
+                    onBack = viewModel::backToPair
                 )
             }
             composable(AppDestination.Onboarding.name) {
                 PermissionOnboarding(
                     onDone = viewModel::completeOnboarding,
-                    error = state.error,
-                    modifier = Modifier.safeDrawingPadding()
+                    error = state.error
                 )
             }
             composable(AppDestination.Home.name) {

@@ -298,23 +298,29 @@ class PairingViewModelTest {
     }
 
     @Test
-    fun linkOpenedBeforeRestoreCannotBeOverwritten() = runTest(mainDispatcherRule.dispatcher) {
+    fun storedSessionTakesPrecedenceOverLinkOpenedDuringRestore() = runTest(mainDispatcherRule.dispatcher) {
         val fixture = Fixture(
             initialCredentials = SecureStore.Credentials(MASTER_KEY.copyOf(), TOKEN),
             initialMetadata = SessionMetadata(ORIGIN, DEVICE_ID, true)
         )
+        fixture.credentials.readGate = CompletableDeferred()
         val viewModel = fixture.viewModel()
-
-        viewModel.openLink(PAIRING_URI)
-        assertEquals(AppDestination.Confirm, viewModel.state.value.destination)
         runCurrent()
 
-        assertEquals(AppDestination.Confirm, viewModel.state.value.destination)
-        assertEquals(ORIGIN, viewModel.state.value.origin)
+        viewModel.openLink(PairingUri.build("https://foreign.example.com", CODE, MASTER_KEY))
+        runCurrent()
+        assertEquals(AppDestination.Loading, viewModel.state.value.destination)
+        fixture.credentials.readGate?.complete(Unit)
+        runCurrent()
+
+        assertEquals(PairingState(AppDestination.Home, ORIGIN), viewModel.state.value)
+        assertEquals(SessionMetadata(ORIGIN, DEVICE_ID, true), fixture.sessions.metadata)
+        assertEquals(0, fixture.credentials.clearCalls)
+        assertEquals(0, fixture.api.claimCalls)
     }
 
     @Test
-    fun openingLinkCancelsRestoreBeforePairingWritesSession() = runTest(mainDispatcherRule.dispatcher) {
+    fun unpairedLinkWaitsForRestoreBeforeOpeningConfirm() = runTest(mainDispatcherRule.dispatcher) {
         val fixture = Fixture()
         fixture.credentials.readGate = CompletableDeferred()
         val viewModel = fixture.viewModel()
@@ -322,9 +328,14 @@ class PairingViewModelTest {
         assertTrue(fixture.credentials.readStarted.isCompleted)
 
         viewModel.openLink(PAIRING_URI)
+        runCurrent()
+        assertEquals(AppDestination.Loading, viewModel.state.value.destination)
+        fixture.credentials.readGate?.complete(Unit)
+        runCurrent()
+        assertEquals(PairingState(AppDestination.Confirm, ORIGIN), viewModel.state.value)
+
         viewModel.confirm()
         runCurrent()
-
         assertEquals(AppDestination.Onboarding, viewModel.state.value.destination)
         assertEquals(SessionMetadata(ORIGIN, DEVICE_ID, false), fixture.sessions.metadata)
         assertNotNull(fixture.credentials.savedToken)

@@ -25,7 +25,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handlePairingIntent(intent)
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
+            handlePairingIntent(intent)
+        } else {
+            setIntent(
+                Intent(intent).apply {
+                    action = Intent.ACTION_MAIN
+                    data = null
+                }
+            )
+        }
         setContent {
             PneumoTheme {
                 PneumoNavHost(pairingViewModel)
@@ -41,8 +50,13 @@ class MainActivity : ComponentActivity() {
     private fun handlePairingIntent(incoming: Intent) {
         if (incoming.action == Intent.ACTION_VIEW) {
             pairingViewModel.openLink(incoming.dataString.orEmpty())
-            // Do not retain a URI containing MK in the activity's intent.
-            incoming.data = null
         }
+        // Preserve launch identity, but never replay a consumed VIEW action or URI.
+        setIntent(
+            Intent(intent).apply {
+                action = Intent.ACTION_MAIN
+                data = null
+            }
+        )
     }
 }

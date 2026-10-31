@@ -13,6 +13,7 @@ class ScreenPreviewProvider : PreviewParameterProvider<ScreenPreviewCase> {
 
 enum class ScreenPreviewCase(val fileName: String) {
     PairIdle("pair-idle"),
+    PairCameraGranted("pair-camera-granted"),
     PairCameraDenied("pair-camera-denied"),
     PairPasteLink("pair-paste-link"),
     PairInvalidError("pair-invalid-error"),
@@ -43,7 +44,7 @@ internal fun PneumoScreenPreview(@PreviewParameter(ScreenPreviewProvider::class)
 @Composable
 internal fun ScreenPreviewContent(fixture: ScreenPreviewCase) {
     when (fixture) {
-        ScreenPreviewCase.PairIdle, ScreenPreviewCase.PairCameraDenied,
+        ScreenPreviewCase.PairIdle, ScreenPreviewCase.PairCameraGranted, ScreenPreviewCase.PairCameraDenied,
         ScreenPreviewCase.PairPasteLink, ScreenPreviewCase.PairInvalidError -> PairPreview(fixture)
 
         ScreenPreviewCase.ConfirmHttps, ScreenPreviewCase.ConfirmNonHttps,
@@ -61,7 +62,7 @@ internal fun ScreenPreviewContent(fixture: ScreenPreviewCase) {
 private fun PairPreview(fixture: ScreenPreviewCase) {
     PairScreen(
         state = PairUiState(
-            cameraGranted = false,
+            cameraGranted = fixture == ScreenPreviewCase.PairCameraGranted,
             cameraDenied = fixture == ScreenPreviewCase.PairCameraDenied,
             pasteMode = fixture == ScreenPreviewCase.PairPasteLink || fixture == ScreenPreviewCase.PairInvalidError,
             link = "",
