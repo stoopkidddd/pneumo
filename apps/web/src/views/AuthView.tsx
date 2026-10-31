@@ -3,6 +3,7 @@ import type { DeviceDTO } from "@pneumo/protocol";
 import { type FormEvent, useEffect, useState } from "react";
 import { type ApiClient, ApiError } from "../api/client.js";
 import { defaultDeviceName } from "../device-name.js";
+import { Link } from "../Link.js";
 import { type Session, save } from "../session/store.js";
 import { DeviceNameField, ErrorNotice, PassphraseFields } from "./fields.js";
 import { passphraseError } from "./passphrase.js";
@@ -187,7 +188,7 @@ export function AuthView({ setup, api, message, onSignedIn }: Props) {
         Your passphrase stays in this browser. Only derived authentication material is sent to the
         server.
       </p>
-      {setup && !missingToken && <a href="/login">Already set up? Sign in</a>}
+      {setup && !missingToken && <Link href="/login">Already set up? Sign in</Link>}
     </section>
   );
 }

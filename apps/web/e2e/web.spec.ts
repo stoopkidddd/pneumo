@@ -315,3 +315,47 @@ test("server-side device revocation signs out an unauthorized browser", async ({
     await context.close();
   }
 });
+
+test("internal navigation preserves the document and bootstrap session", async ({ signedIn }) => {
+  const { page } = signedIn;
+  const bootstrapRequests: string[] = [];
+  let documentLoads = 0;
+  page.on("load", () => {
+    documentLoads += 1;
+  });
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/health" || path === "/api/me") bootstrapRequests.push(path);
+  });
+  await page.evaluate(() => {
+    Reflect.set(window, "pneumoNavigationMarker", true);
+  });
+
+  await page.getByRole("link", { name: "Devices", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page.getByRole("link", { name: "Pneumo home" }).click();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+  expect(await page.evaluate(() => Reflect.get(window, "pneumoNavigationMarker"))).toBe(true);
+  expect(documentLoads).toBe(0);
+  expect(bootstrapRequests).toEqual([]);
+});
+
+test("connection unavailable is accessible and retry reconnects", async ({ page, instance }) => {
+  await page.route("**/api/health", (route) => route.abort());
+  await page.goto(instance.origin);
+  await expect(page.getByRole("heading", { name: "Connection unavailable" })).toBeVisible();
+  await assertAccessible(page);
+  await captureView(page, "connection-unavailable");
+  await page.unroute("**/api/health");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "Set up Pneumo" })).toBeVisible();
+});

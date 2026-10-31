@@ -1,6 +1,7 @@
 import type { DeviceDTO } from "@pneumo/protocol";
 import { useEffect, useState } from "react";
 import { ApiError, createApiClient } from "./api/client.js";
+import { Link } from "./Link.js";
 import { clear, load, type Session } from "./session/store.js";
 import { AuthView } from "./views/AuthView.js";
 import { ErrorNotice } from "./views/fields.js";
@@ -98,11 +99,11 @@ export function App() {
         Skip to content
       </a>
       <header className="app-header">
-        <a className="brand" href="/">
+        <Link className="brand" href="/">
           <span className="brand-mark" aria-hidden="true" />
           <span className="brand-wordmark" aria-hidden="true" />
           <span className="sr-only">Pneumo home</span>
-        </a>
+        </Link>
         {signedIn && (
           <nav aria-label="Main navigation">
             {(
@@ -112,9 +113,9 @@ export function App() {
                 ["/settings", "Settings"],
               ] as const
             ).map(([href, label]) => (
-              <a key={href} href={href} aria-current={path === href ? "page" : undefined}>
+              <Link key={href} href={href} aria-current={path === href ? "page" : undefined}>
                 {label}
-              </a>
+              </Link>
             ))}
           </nav>
         )}
