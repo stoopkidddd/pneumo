@@ -13,6 +13,7 @@ import dev.pneumo.app.data.CredentialStore
 import dev.pneumo.app.data.PairingApiFactory
 import dev.pneumo.app.data.PairingRepository
 import dev.pneumo.app.data.SecureStore
+import dev.pneumo.app.data.SessionLifecycle
 import dev.pneumo.app.data.SessionMetadata
 import dev.pneumo.app.data.SessionStore
 import dev.pneumo.app.net.AccountApi
@@ -163,7 +164,16 @@ class PairingIntentTest {
 
             override fun devices(origin: String, bearerToken: String): DeviceApi = error("Unexpected network request")
         }
-        val repository = PairingRepository(api, credentials, sessions) { "Fixed test phone" }
+        val repository = PairingRepository(
+            api,
+            credentials,
+            sessions,
+            object : SessionLifecycle {
+                override fun paired() = Unit
+
+                override suspend fun cleared(): Unit = error("Session must not be cleared")
+            }
+        ) { "Fixed test phone" }
     }
 
     private companion object {

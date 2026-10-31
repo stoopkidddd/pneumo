@@ -15,6 +15,8 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 internal const val KEY_MISMATCH_MESSAGE =
@@ -57,9 +59,12 @@ class PairingRepository internal constructor(
     private val apiFactory: PairingApiFactory,
     private val credentialStore: CredentialStore,
     private val sessionStore: SessionStore,
+    private val lifecycle: SessionLifecycle,
     private val deviceName: () -> String
 ) {
     private val pendingClaim = AtomicReference<PendingClaim?>()
+    private val mutableSignedOut = MutableStateFlow(false)
+    val signedOut = mutableSignedOut.asStateFlow()
 
     internal suspend fun restore(): RestoredSession? {
         val metadata = sessionStore.read()
@@ -93,7 +98,10 @@ class PairingRepository internal constructor(
             else -> RestoredSession(
                 origin = checkNotNull(metadata.origin),
                 onboardingComplete = metadata.onboardingComplete
-            )
+            ).also {
+                mutableSignedOut.value = false
+                lifecycle.paired()
+            }
         }
     }
 
@@ -122,13 +130,15 @@ class PairingRepository internal constructor(
         sessionStore.saveSession(pending.origin, pending.deviceId)
         val onboardingComplete = sessionStore.read().onboardingComplete
         pendingClaim.compareAndSet(pending, null)
+        mutableSignedOut.value = false
+        lifecycle.paired()
         return PairingOutcome(pending.origin, onboardingComplete)
     }
 
     internal suspend fun abandonPairing() {
         val pending = pendingClaim.get() ?: return
         withContext(NonCancellable) {
-            deleteOwnDevice(pending.origin, pending.token, pending.deviceId)
+            apiFactory.deleteOwnDevice(pending.origin, pending.token, pending.deviceId)
             clearLocalState()
             pendingClaim.compareAndSet(pending, null)
         }
@@ -136,6 +146,7 @@ class PairingRepository internal constructor(
 
     internal suspend fun completeOnboarding() {
         sessionStore.completeOnboarding()
+        lifecycle.paired()
     }
 
     internal suspend fun signOut() {
@@ -147,11 +158,16 @@ class PairingRepository internal constructor(
             return
         }
         try {
-            deleteOwnDevice(metadata.origin, credentials.token, metadata.deviceId)
+            apiFactory.deleteOwnDevice(metadata.origin, credentials.token, metadata.deviceId)
         } finally {
             credentials.masterKey.fill(0)
         }
         withContext(NonCancellable) { clearLocalState() }
+    }
+
+    internal suspend fun revoke() {
+        withContext(NonCancellable) { clearLocalState() }
+        mutableSignedOut.value = true
     }
 
     private suspend fun claim(pairing: PairingData): PendingClaim {
@@ -174,7 +190,7 @@ class PairingRepository internal constructor(
         var cleanupFailure: IOException? = null
         withContext(NonCancellable) {
             try {
-                deleteOwnDevice(pending.origin, pending.token, pending.deviceId)
+                apiFactory.deleteOwnDevice(pending.origin, pending.token, pending.deviceId)
             } catch (expected: IOException) {
                 deletionFailure = expected
             }
@@ -194,22 +210,13 @@ class PairingRepository internal constructor(
         )
     }
 
-    private suspend fun deleteOwnDevice(origin: String, token: String, deviceId: String) {
-        try {
-            apiFactory.devices(origin, token).deleteDevice(deviceId)
-        } catch (expected: ApiError) {
-            if (expected.status != ApiError.HTTP_UNAUTHORIZED && expected.status != HTTP_NOT_FOUND) {
-                throw expected
-            }
-        }
-    }
-
     private suspend fun recoverFailedRestore(expected: Exception): Nothing {
         withContext(NonCancellable) { clearLocalState() }
         throw expected
     }
 
     private suspend fun clearLocalState() {
+        lifecycle.cleared()
         var failure: IOException? = null
         try {
             credentialStore.clear()
@@ -229,10 +236,6 @@ class PairingRepository internal constructor(
         failure?.let { throw it }
     }
 
-    private companion object {
-        const val HTTP_NOT_FOUND = 404
-    }
-
     private class PendingClaim(
         val code: String,
         val origin: String,
@@ -243,6 +246,19 @@ class PairingRepository internal constructor(
         override fun toString(): String = "PendingClaim([redacted])"
     }
 }
+
+private const val HTTP_NOT_FOUND = 404
+
+private suspend fun PairingApiFactory.deleteOwnDevice(origin: String, token: String, deviceId: String) {
+    try {
+        devices(origin, token).deleteDevice(deviceId)
+    } catch (expected: ApiError) {
+        if (expected.status != ApiError.HTTP_UNAUTHORIZED && expected.status != HTTP_NOT_FOUND) {
+            throw expected
+        }
+    }
+}
+
 private fun matchesKeyCheck(pairing: PairingData, encodedRemoteCheck: String): Boolean {
     val masterKey = pairing.mk
     val localCheck = try {

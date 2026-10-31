@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.ui.theme.PneumoTheme
 
 class ScreenPreviewProvider : PreviewParameterProvider<ScreenPreviewCase> {
@@ -138,7 +139,8 @@ private fun ShellPreview(fixture: ScreenPreviewCase) {
                 "Couldn't reach the server. Try signing out again."
             } else {
                 null
-            }
+            },
+            connection = ConnectionState.Connected
         ),
         onTab = {},
         onSignOut = {}

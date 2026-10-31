@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             PneumoTheme {
-                PneumoNavHost(pairingViewModel)
+                PneumoNavHost(pairingViewModel, (application as PneumoApp).container.connectionState)
             }
         }
     }

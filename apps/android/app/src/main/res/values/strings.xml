@@ -48,4 +48,10 @@
     <string name="runtime_battery_unavailable">Battery settings are unavailable. Android may delay pushes.</string>
     <string name="error_icon_description">Error</string>
     <string name="warning_icon_description">Warning</string>
+    <string name="connection_channel">Connection</string>
+    <string name="connection_label">Connection status</string>
+    <string name="connection_connected">Connected</string>
+    <string name="connection_connected_host">Connected to %1$s</string>
+    <string name="connection_reconnecting">Reconnecting…</string>
+    <string name="connection_offline">Offline</string>
 </resources>

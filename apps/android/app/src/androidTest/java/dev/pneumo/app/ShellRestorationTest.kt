@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.pneumo.app.crypto.Base64Url
 import dev.pneumo.app.data.SecureStore
 import dev.pneumo.app.data.SessionPreferences
+import dev.pneumo.app.service.ConnectionService
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -38,6 +39,7 @@ class ShellRestorationTest {
                 compose.onNodeWithText("Sign out").assertIsDisplayed()
             }
         } finally {
+            ConnectionService.stop(context)
             runBlocking {
                 credentials.clear()
                 preferences.clearSession()

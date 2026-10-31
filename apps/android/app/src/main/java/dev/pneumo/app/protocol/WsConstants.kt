@@ -1,0 +1,8 @@
+package dev.pneumo.app.protocol
+
+const val DEFAULT_WS_PING_SECONDS = 60L
+const val WS_HELLO_TIMEOUT_MILLIS = 10_000L
+const val WS_WATCHDOG_MILLIS = (2 * DEFAULT_WS_PING_SECONDS + 15) * 1_000L
+const val WS_CLOSE_PROTOCOL_ERROR = 4_400
+const val WS_CLOSE_UNAUTHORIZED = 4_401
+const val WS_CLOSE_RESTARTING = 1_012

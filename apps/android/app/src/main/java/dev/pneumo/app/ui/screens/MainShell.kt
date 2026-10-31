@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.pneumo.app.R
+import dev.pneumo.app.net.ws.ConnectionState
 
 enum class MainTab {
     Home,
@@ -44,7 +45,7 @@ enum class MainTab {
     Settings
 }
 
-data class ShellUiState(val origin: String, val busy: Boolean, val error: String?)
+data class ShellUiState(val origin: String, val busy: Boolean, val error: String?, val connection: ConnectionState)
 
 @Composable
 fun MainShell(
@@ -96,6 +97,7 @@ fun MainShell(
                         authority = authority,
                         busy = busy,
                         error = error,
+                        connection = state.connection,
                         onSignOut = onSignOut
                     )
             }
@@ -147,9 +149,16 @@ private fun EmptyTab(title: String, body: String) {
 }
 
 @Composable
-private fun SettingsTab(authority: String, busy: Boolean, error: String?, onSignOut: () -> Unit) {
+private fun SettingsTab(
+    authority: String,
+    busy: Boolean,
+    error: String?,
+    connection: ConnectionState,
+    onSignOut: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Text(text = stringResource(R.string.shell_settings), style = MaterialTheme.typography.headlineMedium)
+        ConnectionStatus(connection)
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.medium,

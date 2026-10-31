@@ -19,15 +19,22 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.pneumo.app.BuildConfig
+import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.ui.screens.ConfirmScreen
 import dev.pneumo.app.ui.screens.ConfirmUiState
 import dev.pneumo.app.ui.screens.MainShell
 import dev.pneumo.app.ui.screens.MainTab
 import dev.pneumo.app.ui.screens.ShellUiState
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
-fun PneumoNavHost(viewModel: PairingViewModel, modifier: Modifier = Modifier) {
+fun PneumoNavHost(
+    viewModel: PairingViewModel,
+    connectionState: StateFlow<ConnectionState>,
+    modifier: Modifier = Modifier
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val connection by connectionState.collectAsStateWithLifecycle()
     val controller = rememberNavController()
     // Only public route names enter navigation saved state; pairing data stays in the ViewModel.
     LaunchedEffect(state.destination) {
@@ -73,7 +80,7 @@ fun PneumoNavHost(viewModel: PairingViewModel, modifier: Modifier = Modifier) {
                 var tab by rememberSaveable { mutableStateOf(MainTab.Home) }
                 MainShell(
                     tab = tab,
-                    state = ShellUiState(state.origin, state.busy, state.error),
+                    state = ShellUiState(state.origin, state.busy, state.error, connection),
                     onTab = { tab = it },
                     onSignOut = viewModel::signOut
                 )

@@ -40,6 +40,17 @@ class PairingViewModel(private val pairingRepository: PairingRepository) : ViewM
     private var pairingData: PairingData? = null
     private val restoreJob = restoreSession()
 
+    init {
+        viewModelScope.launch {
+            pairingRepository.signedOut.collect { signedOut ->
+                if (signedOut) {
+                    pairingData = null
+                    mutableState.value = PairingState(destination = AppDestination.Pair)
+                }
+            }
+        }
+    }
+
     fun openLink(value: String) {
         val current = mutableState.value
         if (!restoreJob.isCompleted) {

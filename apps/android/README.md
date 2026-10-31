@@ -122,7 +122,8 @@ onboarding completion separately from encrypted credentials. Startup requires a
 complete credential/metadata pair, then chooses Onboarding or Home. Notification
 permission is requested on API 33+, followed by the battery-exemption request;
 both may be skipped with warnings. Completion survives sign-out. Home and Devices
-remain placeholders; Settings deletes this device before wiping the local session.
+remain placeholders; Settings deletes this device, stops the connection, and wipes
+credentials, session metadata, Room history, and the sync cursor.
 
 `ScreenFrame` owns safe-drawing padding inside its background Surface. The main
 shell consumes Scaffold padding before applying any remaining safe-drawing insets,
@@ -136,6 +137,43 @@ The direct battery-exemption request required by SPEC §14.3 needs a narrowly
 documented `BatteryLife` lint exception on that helper: this sideloaded,
 no-FCM messaging app deliberately maintains its own connection. No lint baseline
 entry or project-wide rule disable was added.
+
+## Connection and encrypted history
+
+`ConnectionService` is a sticky `remoteMessaging` foreground service. A complete
+paired session starts it after pairing, on app restoration, after onboarding,
+and from `BOOT_COMPLETED` or `MY_PACKAGE_REPLACED`. The silent `connection`
+channel uses minimum importance and the brand notification icon; its ongoing
+notification opens the app and reflects Connected, Reconnecting, or Offline.
+Completing onboarding refreshes it after the notification-permission request.
+Settings observes the same live `StateFlow<ConnectionState>`.
+
+`WsClient` uses OkHttp with protocol pings disabled. It sends hello with the
+current DataStore cursor on every attempt, answers application pings immediately,
+and watches for 135 seconds without a frame. The mirrored protocol default is
+`DEFAULT_WS_PING_SECONDS = 60`. Reconnect uses full jitter over 1, 2, 5, 10, 30,
+then 60 seconds; 60 seconds Connected resets the sequence. Network recovery
+preempts the delay. Close 1012 retries in 1–3 seconds; 4401 or an HTTP 401 during
+resync stops retrying, wipes the local session, and returns to Pair.
+
+Room v1 (`pneumo.db`, exported schema in `app/schemas`) stores encrypted push
+envelopes, file metadata, devices, notification claims, and the durable server
+ordering tuple. `PushRepository` decrypts on read with an in-memory content key.
+It never persists plaintext or a decrypted-payload cache. Sign-out/revoke cancels
+and joins the connection before wiping Room and DataStore.
+
+`SyncEngine` applies frames serially, advances `lastPushId` after each applied
+push, and deduplicates replay/live delivery by id. Resync pages newest-first
+until Room overlap, then applies the missing pushes oldest-first. Cursor ordering
+uses server `(createdAt, id)`, not sender-generated UUID order. Heartbeats run
+independently of ordered frame application and HTTP catch-up.
+
+`PushSink` currently logs only push ids. Only non-self pushes targeted to this
+device or all devices are claimed. The durable `notified` claim precedes the sink
+call, preventing duplicate calls across replay and restart. SQLite and an external
+notification side effect cannot be atomic: process death between claim and sink
+can lose that notification. The notification implementation remains a separate
+issue.
 
 
 ## Screenshots
@@ -157,6 +195,13 @@ Each base name below has both `-light.png` and `-dark.png` variants:
   `onboarding-warning`.
 - Shell: `main-shell-home`, `main-shell-devices`, `main-shell-settings`,
   `main-shell-settings-busy`, `main-shell-sign-out-error`.
+
+ENG-259 adds six component goldens: `connection-connected`,
+`connection-reconnecting`, and `connection-offline`, each in light and dark.
+`ConnectionStatusPreview` and `ConnectionStatusScreenshotTest` share those state
+fixtures. The light/dark `main-shell-settings`, `main-shell-settings-busy`, and
+`main-shell-sign-out-error` goldens were intentionally re-recorded for the live
+status row.
 
 Only record when intentionally changing the expected UI:
 
@@ -185,6 +230,22 @@ onboarding persistence. QR analyzer tests decode padded luminance frames and
 verify frame ownership on unreadable input.
 Robolectric lifecycle cases cover consumed-link recreation, saved task bundles,
 history launches and stored-session precedence over cold and warm foreign links.
+
+Connection tests cover hello cursors, ordered replay/live dedupe, resync overlap,
+device/deletion frames, notification eligibility, unauthorized sign-out, jitter
+and reset, watchdog silence, network recovery, Room DAOs, decrypt-on-read, and
+cursor recovery across the DataStore/Room write boundary. Boot/service Robolectric
+tests cover paired/unpaired restoration and the silent minimum-importance channel.
+
+There is no Android/server managed-device harness yet. ENG-259's local-server
+check used a regular API 34 emulator, deep-link pairing, and the onboarding battery
+exemption. Settings reached Connected; package replacement restored the socket.
+During ten minutes of screen-off forced Doze, all ten one-minute samples remained
+online with a Connected foreground notification. After `deviceidle unforce`,
+Room held all 12 test pushes (two before Doze, ten during), each marked notified.
+The emulator state, isolated server/MinIO, and throwaway harness were cleaned up.
+Android 14 elevated the active foreground-service channel to LOW (`2`) from its
+requested MIN (`1`); its original importance remained MIN and sound stayed off.
 
 ATDs disable drawing by default and omit Settings/SystemUI. For a manual screenshot
 smoke, enable drawing with `adb shell setprop debug.hwui.drawing_enabled 1` and

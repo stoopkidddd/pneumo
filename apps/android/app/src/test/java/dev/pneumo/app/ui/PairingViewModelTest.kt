@@ -9,6 +9,7 @@ import dev.pneumo.app.data.KEY_MISMATCH_MESSAGE
 import dev.pneumo.app.data.PairingApiFactory
 import dev.pneumo.app.data.PairingRepository
 import dev.pneumo.app.data.SecureStore
+import dev.pneumo.app.data.SessionLifecycle
 import dev.pneumo.app.data.SessionMetadata
 import dev.pneumo.app.data.SessionStore
 import dev.pneumo.app.net.AccountApi
@@ -359,6 +360,30 @@ class PairingViewModelTest {
         }
     }
 
+    @Test
+    fun revokedSessionWipesAndReturnsToPairWithoutServerDelete() = runTest(mainDispatcherRule.dispatcher) {
+        val fixture = Fixture(
+            initialCredentials = SecureStore.Credentials(MASTER_KEY.copyOf(), TOKEN),
+            initialMetadata = SessionMetadata(ORIGIN, DEVICE_ID, true)
+        )
+        val viewModel = fixture.viewModel()
+        runCurrent()
+        assertEquals(AppDestination.Home, viewModel.state.value.destination)
+        assertEquals(1, fixture.lifecycle.starts)
+
+        viewModel.state.test {
+            awaitItem()
+            fixture.repository.revoke()
+            runCurrent()
+            assertEquals(AppDestination.Pair, awaitItem().destination)
+        }
+        assertNull(fixture.credentials.savedToken)
+        assertEquals(SessionMetadata(null, null, true), fixture.sessions.metadata)
+        assertEquals(1, fixture.credentials.clearCalls)
+        assertEquals(1, fixture.lifecycle.clears)
+        assertTrue(fixture.api.deletedDeviceIds.isEmpty())
+    }
+
     private class Fixture(
         remoteMasterKey: ByteArray = MASTER_KEY,
         initialCredentials: SecureStore.Credentials? = null,
@@ -368,11 +393,24 @@ class PairingViewModelTest {
         val sessions = FakeSessionStore(initialMetadata)
         val api = FakePairingApiFactory(remoteMasterKey)
 
-        private val repository = PairingRepository(api, credentials, sessions) { "Fixed test phone" }
+        val lifecycle = FakeSessionLifecycle()
+        val repository = PairingRepository(api, credentials, sessions, lifecycle) { "Fixed test phone" }
 
         fun viewModel(): PairingViewModel = PairingViewModel(repository)
     }
 
+    private class FakeSessionLifecycle : SessionLifecycle {
+        var starts = 0
+        var clears = 0
+
+        override fun paired() {
+            starts += 1
+        }
+
+        override suspend fun cleared() {
+            clears += 1
+        }
+    }
     private class FakeCredentialStore(initial: SecureStore.Credentials?) : CredentialStore {
         private var credentials = initial
         var savedMasterKey: ByteArray? = null
