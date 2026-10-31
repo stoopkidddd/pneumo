@@ -2,7 +2,9 @@ import type { DeviceDTO } from "@pneumo/protocol";
 import { useState } from "react";
 import { type ApiClient, ApiError } from "../api/client.js";
 import { DeviceNameForm } from "../devices/DeviceNameForm.js";
+import { unsubscribeBrowser } from "../pwa/subscription.js";
 import { clear } from "../session/store.js";
+import { BrowserNotifications } from "../settings/BrowserNotifications.js";
 import { ErrorNotice } from "./fields.js";
 import "../devices/devices.css";
 
@@ -27,6 +29,7 @@ export function SettingsView({
     setError(null);
     onSigningOut(true);
     try {
+      await unsubscribeBrowser();
       await api.request("deleteDevice", { params: { id: device.id } });
       await clear();
       onSignedOut();
@@ -42,6 +45,7 @@ export function SettingsView({
     <section className="settings-surface" aria-labelledby="settings-title">
       <h1 id="settings-title">Settings</h1>
       <DeviceNameForm name={device.name} onSave={onRename} />
+      <BrowserNotifications api={api} />
       <div className="signout-section">
         <h2>Sign out of this browser</h2>
         <p className="muted">

@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["vite/client", "node"],
+    "types": ["vite/client", "vite-plugin-pwa/react", "node"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],

@@ -1,0 +1,50 @@
+.notification-settings {
+  padding-top: var(--space-2xl);
+  margin-top: var(--space-2xl);
+  border-top: 1px solid var(--color-border);
+}
+.notification-toggle-row,
+.pwa-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+.notification-toggle-row {
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+.notification-toggle-row button {
+  min-width: 72px;
+}
+.notification-toggle-row [aria-checked="true"] {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-color: var(--color-accent);
+}
+.notification-prompt {
+  padding-block: var(--space-xl);
+  margin-bottom: var(--space-xl);
+  border-bottom: 1px solid var(--color-border);
+}
+.notification-prompt h2 {
+  margin-bottom: var(--space-sm);
+}
+.notification-prompt .notice {
+  margin-top: var(--space-lg);
+}
+.update-toast {
+  position: fixed;
+  inset: auto var(--space-xl) var(--space-xl) auto;
+  z-index: 2;
+  max-width: min(420px, calc(100% - 2 * var(--space-xl)));
+  padding: var(--space-xl);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+}
+.update-toast p {
+  margin-bottom: var(--space-md);
+}

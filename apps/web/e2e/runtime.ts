@@ -10,6 +10,7 @@ import {
   startMinio as provisionMinio,
   stopMinio,
 } from "../../../scripts/e2e/minio.js";
+import { S3Storage } from "../../server/src/storage/s3.js";
 
 const execute = promisify(execFile);
 const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -21,6 +22,7 @@ export const SETUP_TOKEN = "fixed-e2e-setup-token";
 export interface RunningWebRuntime {
   child: ChildProcess;
   origin: string;
+  readDeviceHasWebPush(deviceId: string): Promise<boolean>;
   stop(): Promise<void>;
 }
 
@@ -153,6 +155,24 @@ export async function stopWebRuntime(child: ChildProcess): Promise<void> {
   }
 }
 
+async function readDeviceHasWebPush(prefix: string, deviceId: string): Promise<boolean> {
+  const storage = new S3Storage({
+    S3_ENDPOINT: required("PNEUMO_E2E_S3_ENDPOINT"),
+    S3_REGION: required("PNEUMO_E2E_S3_REGION"),
+    S3_BUCKET: required("PNEUMO_E2E_S3_BUCKET"),
+    S3_ACCESS_KEY_ID: required("PNEUMO_E2E_S3_ACCESS_KEY_ID"),
+    S3_SECRET_ACCESS_KEY: required("PNEUMO_E2E_S3_SECRET_ACCESS_KEY"),
+    S3_FORCE_PATH_STYLE: required("PNEUMO_E2E_S3_FORCE_PATH_STYLE") === "true",
+    S3_PREFIX: prefix,
+  });
+  try {
+    const record = await storage.getJson<{ webPush: unknown }>(`devices/${deviceId}.json`);
+    return record.webPush !== null;
+  } finally {
+    storage.destroy();
+  }
+}
+
 export async function startWebRuntime(prefix: string): Promise<RunningWebRuntime> {
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: serverDirectory,
@@ -165,6 +185,7 @@ export async function startWebRuntime(prefix: string): Promise<RunningWebRuntime
     return {
       child,
       origin: `http://127.0.0.1:${port}`,
+      readDeviceHasWebPush: (deviceId) => readDeviceHasWebPush(prefix, deviceId),
       stop: () => stopWebRuntime(child),
     };
   } catch (error) {

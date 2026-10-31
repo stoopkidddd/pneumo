@@ -1,10 +1,12 @@
-import type { DeviceDTO } from "@pneumo/protocol";
+import { type DeviceDTO, isUuidv7 } from "@pneumo/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, createApiClient } from "./api/client.js";
 import { DevicesView } from "./devices/DevicesView.js";
 import { HomeView } from "./home/HomeView.js";
 import { useHome } from "./home/useHome.js";
 import { Link } from "./Link.js";
+import { NotificationPrompt } from "./pwa/NotificationPrompt.js";
+import { unsubscribeBrowser } from "./pwa/subscription.js";
 import { clear, load, type Session } from "./session/store.js";
 import { AuthView } from "./views/AuthView.js";
 import { ErrorNotice } from "./views/fields.js";
@@ -28,6 +30,8 @@ export function App() {
   const unauthorized = useCallback(
     async (reason = "Your session is no longer valid. Sign in again.") => {
       await clear();
+      // A failed push-service cleanup must not retain revoked session keys.
+      void unsubscribeBrowser().catch(() => undefined);
       setSession((current) => {
         current?.mk.fill(0);
         return null;
@@ -59,6 +63,7 @@ export function App() {
     if (!session) return;
     signingOut.current = true;
     try {
+      await unsubscribeBrowser();
       await api.request("deleteDevice", { params: { id: session.deviceId } });
       await clear();
       signedOut();
@@ -75,10 +80,20 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let restoredOffline = false;
     async function start() {
       setError(null);
       try {
-        const [health, stored] = await Promise.all([api.request("health"), load()]);
+        const stored = await load();
+        if (!navigator.onLine && stored) {
+          if (!cancelled) {
+            restoredOffline = true;
+            setInitialized(true);
+            setSession(stored);
+          }
+          return;
+        }
+        const health = await api.request("health");
         if (cancelled) return;
         setInitialized(health.initialized);
         if (!health.initialized) {
@@ -100,10 +115,34 @@ export function App() {
       }
     }
     void start();
+    const online = () => {
+      if (!restoredOffline) return;
+      restoredOffline = false;
+      void start();
+    };
+    window.addEventListener("online", online);
     return () => {
       cancelled = true;
+      window.removeEventListener("online", online);
     };
   }, [api]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const showPush = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        event.source !== navigator.serviceWorker.controller ||
+        data?.type !== "show-push" ||
+        !isUuidv7(data.id)
+      )
+        return;
+      window.history.pushState(null, "", `/?push=${encodeURIComponent(data.id)}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    };
+    navigator.serviceWorker.addEventListener("message", showPush);
+    return () => navigator.serviceWorker.removeEventListener("message", showPush);
+  }, []);
 
   useEffect(() => {
     if (!ready || error) return;
@@ -124,7 +163,7 @@ export function App() {
     if (ready) document.getElementById("main")?.focus({ preventScroll: true });
   }, [path, ready]);
 
-  const signedIn = session !== null && device !== null;
+  const signedIn = session !== null;
   const routeReady = signedIn || path === (initialized ? "/login" : "/setup");
   return (
     <>
@@ -179,7 +218,7 @@ export function App() {
               navigate("/");
             }}
           />
-        ) : path === "/settings" ? (
+        ) : path === "/settings" && device ? (
           <SettingsView
             api={api}
             device={currentDevice ?? device}
@@ -189,10 +228,18 @@ export function App() {
             }}
             onSignedOut={signedOut}
           />
+        ) : path === "/settings" ? (
+          <section className="settings-surface">
+            <h1>Settings</h1>
+            <p role="status">Offline. Reconnect to load this browser’s settings.</p>
+          </section>
         ) : path === "/devices" ? (
           <DevicesView api={api} session={session} state={home} onRemoveSelf={removeSelf} />
         ) : (
-          <HomeView state={home} />
+          <>
+            {!home.offline && <NotificationPrompt api={api} />}
+            <HomeView state={home} />
+          </>
         )}
       </main>
     </>

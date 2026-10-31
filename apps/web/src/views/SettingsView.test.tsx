@@ -30,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(navigator, "serviceWorker");
 });
 
 test("sign out waits for device revocation and local deletion before leaving Settings", async () => {
@@ -119,4 +120,38 @@ test("a 401 uses the global session handler without a misleading local error or 
   expect(storage.clear).toHaveBeenCalledOnce();
   expect(unauthorized).toHaveBeenCalledOnce();
   expect(signedOut).not.toHaveBeenCalled();
+});
+
+test("sign out removes the browser subscription as well as the device and keys", async () => {
+  let subscribed = true;
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {
+      getRegistration: async () => ({
+        pushManager: {
+          getSubscription: async () => ({
+            unsubscribe: async () => {
+              subscribed = false;
+              return true;
+            },
+          }),
+        },
+      }),
+    },
+  });
+  fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  const signedOut = vi.fn();
+  render(
+    <SettingsView
+      api={createApiClient({ onUnauthorized: vi.fn() })}
+      device={device}
+      onRename={vi.fn()}
+      onSigningOut={vi.fn()}
+      onSignedOut={signedOut}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await waitFor(() => expect(signedOut).toHaveBeenCalledOnce());
+  expect(subscribed).toBe(false);
+  expect(storage.clear).toHaveBeenCalledOnce();
 });

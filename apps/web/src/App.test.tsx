@@ -121,3 +121,18 @@ test("health failure does not pretend the instance needs setup", async () => {
   await screen.findByRole("heading", { name: "Connection unavailable" });
   expect(screen.queryByRole("heading", { name: "Set up Pneumo" })).toBeNull();
 });
+
+test("offline startup retains a stored session and opens the cached Home shell", async () => {
+  await storedSession();
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Offline")));
+  try {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Home" });
+    expect(screen.getByText(/Offline\. Your loaded history/)).toBeTruthy();
+    expect(await load()).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
+  } finally {
+    online.mockRestore();
+  }
+});

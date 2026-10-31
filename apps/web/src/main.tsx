@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./index.js";
+import { UpdatePrompt } from "./pwa/UpdatePrompt.js";
 import "./styles/tokens.css";
 import "./styles/base.css";
 
@@ -13,5 +14,6 @@ if (!root) {
 createRoot(root).render(
   <StrictMode>
     <App />
+    <UpdatePrompt />
   </StrictMode>,
 );
