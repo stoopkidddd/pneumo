@@ -38,11 +38,18 @@ import dev.pneumo.app.protocol.LinkPayload
 import dev.pneumo.app.protocol.NotePayload
 import dev.pneumo.app.protocol.PushPayload
 import dev.pneumo.app.sync.DecryptedPush
+import dev.pneumo.app.transfer.DownloadState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun HomeHistoryRow(item: DecryptedPush, devices: List<DeviceDTO>, highlighted: Boolean, onDelete: () -> Unit) {
+internal fun HomeHistoryRow(
+    item: DecryptedPush,
+    devices: List<DeviceDTO>,
+    highlighted: Boolean,
+    onDelete: () -> Unit,
+    transfer: DownloadState? = null
+) {
     val payload = item.payload
     val kind = payload.kindLabel()
     Column {
@@ -67,9 +74,9 @@ internal fun HomeHistoryRow(item: DecryptedPush, devices: List<DeviceDTO>, highl
                 HomeHistoryBody(
                     item = item,
                     devices = devices,
-                    kind = kind,
                     highlighted = highlighted,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    transfer = transfer
                 )
             }
         }
@@ -81,15 +88,15 @@ internal fun HomeHistoryRow(item: DecryptedPush, devices: List<DeviceDTO>, highl
 private fun RowScope.HomeHistoryBody(
     item: DecryptedPush,
     devices: List<DeviceDTO>,
-    kind: String,
     highlighted: Boolean,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    transfer: DownloadState?
 ) {
     val source = devices.firstOrNull { device -> device.id == item.push.sourceDeviceId }?.name
         ?: stringResource(R.string.home_removed_device)
     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         HomeHistoryHeader(
-            kind = kind,
+            kind = item.payload.kindLabel(),
             source = source,
             createdAt = item.push.createdAt
         )
@@ -101,7 +108,7 @@ private fun RowScope.HomeHistoryBody(
             )
         }
         PushContents(item.payload)
-        HomeHistoryActions(payload = item.payload, onDelete = onDelete)
+        HomeHistoryActions(item = item, transfer = transfer, onDelete = onDelete)
     }
 }
 
@@ -130,34 +137,40 @@ private fun HomeHistoryHeader(kind: String, source: String, createdAt: String) {
 }
 
 @Composable
-private fun HomeHistoryActions(payload: PushPayload, onDelete: () -> Unit) {
+private fun HomeHistoryActions(item: DecryptedPush, transfer: DownloadState?, onDelete: () -> Unit) {
+    val payload = item.payload
     val context = LocalContext.current
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        when (payload) {
-            is NotePayload -> HomeCopyButton(payload.body)
-
-            is LinkPayload -> {
-                HomeCopyButton(payload.url)
-                TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, payload.url.toUri()))
-                }) {
-                    Text(stringResource(R.string.home_open))
-                }
-            }
-
-            is FilePayload -> HomeCopyButton(payload.body?.takeIf(String::isNotBlank) ?: payload.file.name)
+    Column {
+        if (payload is FilePayload) {
+            HomeFileTransfer(pushId = item.push.id, mime = payload.file.mime, state = transfer)
         }
-        TextButton(
-            onClick = onDelete,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.size(6.dp))
-            Text(stringResource(R.string.home_delete))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            when (payload) {
+                is NotePayload -> HomeCopyButton(payload.body)
+
+                is LinkPayload -> {
+                    HomeCopyButton(payload.url)
+                    TextButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, payload.url.toUri()))
+                    }) {
+                        Text(stringResource(R.string.home_open))
+                    }
+                }
+
+                is FilePayload -> Unit
+            }
+            TextButton(
+                onClick = onDelete,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(stringResource(R.string.home_delete))
+            }
         }
     }
 }

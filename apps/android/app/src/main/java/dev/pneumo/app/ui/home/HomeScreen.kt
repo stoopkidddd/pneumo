@@ -72,7 +72,9 @@ internal fun HomeScreen(
                 actions = HomeComposerActions(
                     onTextChange = actions.onTextChange,
                     onTargetSelect = actions.onTargetSelect,
-                    onSend = actions.onSend
+                    onSend = actions.onSend,
+                    onAttach = actions.onAttach,
+                    onRemoveAttachments = actions.onRemoveAttachments
                 )
             )
         }
@@ -153,7 +155,8 @@ private fun HomeContent(
                         item = item,
                         devices = state.devices,
                         highlighted = item.push.id == state.highlightedPushId,
-                        onDelete = { actions.onDelete(item.push.id) }
+                        onDelete = { actions.onDelete(item.push.id) },
+                        transfer = state.downloads[item.push.id]
                     )
                 }
                 if (state.nextBefore != null) {

@@ -17,6 +17,9 @@ import dev.pneumo.app.data.AppSession
 import dev.pneumo.app.data.TextPushes
 import dev.pneumo.app.data.db.toEntity
 import dev.pneumo.app.protocol.LinkPayload
+import dev.pneumo.app.transfer.UploadAttachments
+import dev.pneumo.app.transfer.UploadOptions
+import dev.pneumo.app.transfer.UploadScheduler
 import dev.pneumo.app.ui.share.ParsedShare
 import dev.pneumo.app.ui.share.ShareActions
 import dev.pneumo.app.ui.share.ShareDevice
@@ -39,16 +42,22 @@ class ShareActivity : ComponentActivity() {
     private var session: AppSession? = null
     private var state by mutableStateOf(ShareUiState())
     private var maxEnvelopeBytes = 0L
+    private var maxFileBytes = DEFAULT_MAX_FILE_BYTES
+    private var fileShare: ParsedShare.Files? = null
+    private var queued = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val parsed = ShareIntentParser.parse(intent)
+        fileShare = parsed as? ParsedShare.Files
         state = when (parsed) {
             is ParsedShare.Valid -> {
                 val payload = TextPushes.payload(parsed.text.body, parsed.text.title)
                 ShareUiState(sharedText = parsed.text, isLink = payload is LinkPayload)
             }
+
+            is ParsedShare.Files -> ShareUiState(sharedText = parsed.text)
 
             ParsedShare.Invalid -> ShareUiState(mode = ShareMode.Invalid)
         }
@@ -74,7 +83,7 @@ class ShareActivity : ComponentActivity() {
                 }
             }
         }
-        if (parsed is ParsedShare.Valid) loadSession()
+        if (parsed !is ParsedShare.Invalid) loadSession()
     }
 
     private fun loadSession() {
@@ -103,6 +112,12 @@ class ShareActivity : ComponentActivity() {
     private suspend fun prepareSession(container: AppContainer, opened: AppSession) {
         session = opened
         maxEnvelopeBytes = opened.maxEnvelopeBytes
+        fileShare?.let { files ->
+            if (state.files.isEmpty()) {
+                val attachments = UploadAttachments.prepare(this, files.uris, files.mime)
+                state = state.copy(files = attachments)
+            }
+        }
         val cached = withContext(Dispatchers.IO) {
             container.database.devices().list().map { device ->
                 ShareDevice(device.id, device.name, device.online)
@@ -129,7 +144,7 @@ class ShareActivity : ComponentActivity() {
             }
         }
         val limit = async(Dispatchers.IO) {
-            opened.api.me().limits.maxEnvelopeBytes
+            opened.api.me().limits
         }
         try {
             val refreshed = devices.await()
@@ -146,7 +161,9 @@ class ShareActivity : ComponentActivity() {
             state = state.copy(error = getString(R.string.share_devices_refresh_error))
         }
         try {
-            maxEnvelopeBytes = limit.await()
+            val limits = limit.await()
+            maxEnvelopeBytes = limits.maxEnvelopeBytes
+            maxFileBytes = limits.maxFileBytes
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -172,16 +189,32 @@ class ShareActivity : ComponentActivity() {
         state = state.copy(sending = true, error = null)
         lifecycleScope.launch {
             try {
-                val payload = TextPushes.payload(sharedText.body, sharedText.title, message)
-                val request = TextPushes.request(
-                    payload = payload,
-                    targetDeviceId = targetDeviceId,
-                    contentKey = activeSession.contentKey,
-                    maxEnvelopeBytes = envelopeLimit
-                )
-                withContext(Dispatchers.IO) {
-                    ShareWorkScheduler.enqueue(this@ShareActivity, activeSession.deviceId, request)
+                if (state.files.isNotEmpty()) {
+                    UploadScheduler.enqueue(
+                        context = this@ShareActivity,
+                        session = activeSession,
+                        attachments = state.files,
+                        options = UploadOptions(
+                            targetDeviceId = targetDeviceId,
+                            title = sharedText.title,
+                            body = listOf(sharedText.body, message).filter(String::isNotBlank).joinToString("\n"),
+                            maxFileBytes = maxFileBytes,
+                            maxEnvelopeBytes = envelopeLimit
+                        )
+                    )
+                } else {
+                    val payload = TextPushes.payload(sharedText.body, sharedText.title, message)
+                    val request = TextPushes.request(
+                        payload = payload,
+                        targetDeviceId = targetDeviceId,
+                        contentKey = activeSession.contentKey,
+                        maxEnvelopeBytes = envelopeLimit
+                    )
+                    withContext(Dispatchers.IO) {
+                        ShareWorkScheduler.enqueue(this@ShareActivity, activeSession.deviceId, request)
+                    }
                 }
+                queued = true
                 finish()
             } catch (error: IllegalArgumentException) {
                 state = state.copy(
@@ -206,5 +239,14 @@ class ShareActivity : ComponentActivity() {
             )
         )
         finish()
+    }
+
+    override fun onDestroy() {
+        if (!queued) UploadAttachments.discard(this, state.files)
+        super.onDestroy()
+    }
+
+    private companion object {
+        const val DEFAULT_MAX_FILE_BYTES = 524_288_000L
     }
 }

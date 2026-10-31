@@ -6,7 +6,6 @@
     <string name="notification_action_open">Open</string>
     <string name="notification_action_download">Download</string>
     <string name="notification_copied">Copied</string>
-    <string name="notification_download_coming_soon">Coming soon</string>
     <plurals name="notification_group_count">
         <item quantity="one">%1$d new push</item>
         <item quantity="other">%1$d new pushes</item>

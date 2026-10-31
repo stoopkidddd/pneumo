@@ -1,6 +1,7 @@
 package dev.pneumo.app.ui.share
 
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import dev.pneumo.app.transfer.UploadAttachment
 import dev.pneumo.app.ui.theme.PneumoTheme
 
 enum class SharePreviewCase(val fileName: String) {
@@ -20,7 +22,8 @@ enum class SharePreviewCase(val fileName: String) {
     Invalid("share-invalid"),
     LoadError("share-load-error"),
     Sending("share-sending"),
-    Error("share-error")
+    Error("share-error"),
+    Files("share-files")
 }
 
 internal class SharePreviewProvider : PreviewParameterProvider<SharePreviewCase> {
@@ -38,12 +41,26 @@ internal fun ShareScreenPreview(@PreviewParameter(SharePreviewProvider::class) f
 internal fun SharePreviewContent(fixture: SharePreviewCase) {
     val state = when (fixture) {
         SharePreviewCase.Loading -> ShareUiState(mode = ShareMode.Loading)
+
         SharePreviewCase.NotPaired -> ShareUiState(mode = ShareMode.NotPaired)
+
         SharePreviewCase.Invalid -> ShareUiState(mode = ShareMode.Invalid)
+
         SharePreviewCase.LoadError -> ShareUiState(mode = ShareMode.LoadError)
+
         SharePreviewCase.Sending -> pairedState().copy(sending = true)
+
         SharePreviewCase.Error -> pairedState().copy(error = "Couldn’t queue this share. Try again.")
+
         SharePreviewCase.Paired -> pairedState()
+
+        SharePreviewCase.Files -> pairedState().copy(
+            isLink = false,
+            files = listOf(
+                UploadAttachment(Uri.EMPTY, "photo.jpg", "image/jpeg", PREVIEW_PHOTO_BYTES),
+                UploadAttachment(Uri.EMPTY, "notes.txt", "text/plain", PREVIEW_NOTE_BYTES)
+            )
+        )
     }
     Box(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
@@ -76,3 +93,6 @@ private fun pairedState() = ShareUiState(
         )
     )
 )
+
+private const val PREVIEW_PHOTO_BYTES = 248_832L
+private const val PREVIEW_NOTE_BYTES = 1_024L

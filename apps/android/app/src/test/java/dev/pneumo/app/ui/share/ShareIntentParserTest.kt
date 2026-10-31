@@ -1,6 +1,7 @@
 package dev.pneumo.app.ui.share
 
 import android.content.Intent
+import android.net.Uri
 import dev.pneumo.app.data.TextPushes
 import dev.pneumo.app.protocol.LinkPayload
 import dev.pneumo.app.protocol.NotePayload
@@ -84,6 +85,43 @@ class ShareIntentParserTest {
     @Test
     fun blankTextIsInvalid() {
         assertTrue(ShareIntentParser.parse(shareIntent(" \n\t")) is ParsedShare.Invalid)
+    }
+
+    @Test
+    fun singleStreamTakesPrecedenceOverSharedTextAndKeepsCaption() {
+        val uri = Uri.parse("content://photos/photo/1")
+        val parsed = ShareIntentParser.parse(
+            shareIntent("Photo caption", "A photo")
+                .setType("image/*")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+        ) as ParsedShare.Files
+
+        assertEquals(listOf(uri), parsed.uris)
+        assertEquals("image/*", parsed.mime)
+        assertEquals(SharedText("Photo caption", "A photo"), parsed.text)
+    }
+
+    @Test
+    fun multipleStreamsKeepOrderWithMissingMime() {
+        val uris = arrayListOf(Uri.parse("content://documents/2"), Uri.parse("content://documents/1"))
+        val parsed = ShareIntentParser.parse(
+            Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        ) as ParsedShare.Files
+
+        assertEquals(uris, parsed.uris)
+        assertNull(parsed.mime)
+        assertEquals("", parsed.text.body)
+    }
+
+    @Test
+    fun multipleWithoutStreamsAndUnrelatedActionAreInvalid() {
+        assertEquals(ParsedShare.Invalid, ShareIntentParser.parse(Intent(Intent.ACTION_SEND_MULTIPLE)))
+        assertEquals(
+            ParsedShare.Invalid,
+            ShareIntentParser.parse(
+                Intent(Intent.ACTION_VIEW).putExtra(Intent.EXTRA_STREAM, Uri.parse("content://files/1"))
+            )
+        )
     }
 
     private fun shareIntent(text: String, subject: String? = null) = Intent(Intent.ACTION_SEND).apply {

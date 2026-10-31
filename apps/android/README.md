@@ -123,7 +123,7 @@ onboarding completion separately from encrypted credentials. Startup requires a
 complete credential/metadata pair, then chooses Onboarding or Home. Notification
 permission is requested on API 33+, followed by the battery-exemption request;
 both may be skipped with warnings. Completion survives sign-out. Home shows encrypted
-history and a text composer; Devices manages paired devices. Settings deletes this
+history and a text/file composer; Devices manages paired devices. Settings deletes this
 device, stops the connection, and wipes credentials, session metadata, Room history,
 and the sync cursor.
 
@@ -205,10 +205,13 @@ Back from the browser does not unexpectedly open Pneumo. The dispatcher rejects
 non-HTTP(S) URLs; protocol payload validation already excludes them.
 
 Download sends `dev.pneumo.app.notify.DOWNLOAD` to `DownloadRequestedReceiver`
-with the `pushId` extra. Until the files issue replaces that handler, it logs only
-the push id and shows "Coming soon". Body taps pass `pushId` through MainActivity,
-navigation and `ShellUiState`, selecting Home without replaying the tab selection
-on recreation. Home fetches a missing target, scrolls to it, and marks it selected.
+with the `pushId` extra and enqueues `DownloadWorker` for the initiating session.
+Completion replaces the same tagged child through `PushNotificationGroup.post`,
+with Open and Share actions. Open cancels only that child before forwarding a
+read-granted content URI; Share opens the system chooser. Body taps still pass
+`pushId` through MainActivity, navigation and `ShellUiState`, selecting Home without
+replaying the tab selection on recreation. Home fetches a missing target, scrolls
+to it, and marks it selected.
 
 Notification permission denial skips delivery without decrypting. Settings
 refreshes app and channel permission state on resume and offers "Open notification
@@ -220,16 +223,19 @@ Home collects the newest-first Room history through `PushRepository`. Envelope
 parsing, AES-GCM decryption, and payload decoding run on `Dispatchers.Default`,
 not the Main collector; decrypted payloads stay in memory. HTTP pages extend the
 encrypted cache without changing the connection's sync cursor. Notes, links, and
-file metadata have distinct rows; file transfer actions remain in the files lane.
+file metadata have distinct rows; files offer Download, then Open and Share.
 Delete hides a row immediately, offers Undo for five seconds, then calls the API;
 a failure restores the row. The composer retains failed drafts, detects links with
 the protocol HTTP(S) rule, and offers all devices or an individual online/offline target.
 
-The exported `ShareActivity` accepts only `ACTION_SEND` with `text/plain`.
-`EXTRA_TEXT` supplies the body and `EXTRA_SUBJECT` the optional title. A single
-trimmed URL becomes a link; multiline prose stays a note. An optional message
-becomes the link body or is appended to the note. When unpaired, the sheet opens
-the existing pairing flow.
+The exported `ShareActivity` accepts `ACTION_SEND` text and `EXTRA_STREAM` files
+of any MIME type, plus `ACTION_SEND_MULTIPLE` (one push per file). `EXTRA_TEXT`
+supplies the body and `EXTRA_SUBJECT` the optional title. A single trimmed text URL
+becomes a link; multiline prose stays a note. An optional message becomes the link
+body or is appended to the note. With files, nonblank title/body/message accompany
+only the first file; blank fields are omitted. When unpaired, the sheet opens the
+existing pairing flow. The Home attach button uses `ACTION_OPEN_DOCUMENT` with
+multiple selection; a file-only draft does not require message text.
 
 WorkManager is pinned to `2.12.0`. Sending encrypts before enqueueing, confirms the
 enqueue within a 750 ms bound, and finishes the activity. WorkManager stores only
@@ -256,6 +262,53 @@ Devices supports rename, inline removal confirmation for other devices, and a
 Settings shortcut for this device's sign-out. Settings reuses the existing live
 connection component and notification recovery, refreshes notification and battery
 state on resume, and shows the server authority and app version.
+
+## File transfers
+
+`UploadAttachments` reads `OpenableColumns` name/size and the resolver MIME type,
+falling back to a concrete intent MIME type, the extension, then
+`application/octet-stream`. Before enabling Send, it snapshots each source into
+app-private cache. This includes picker documents: immutable snapshots avoid
+re-encrypting changed provider bytes with the same file key on a retry. Workers
+therefore do not depend on temporary grants or retain persistable URI permissions.
+These copies are the user's own selected plaintext, not decrypted received files.
+Dismissal/removal deletes unqueued copies; confirmed enqueue transfers ownership
+to the worker, which deletes them on success or terminal failure and retains them
+on retry. Failed enqueue restores the draft's snapshots.
+
+Upload work metadata is authenticated ciphertext wrapped with the existing
+Keystore key in `noBackupFilesDir`; WorkManager receives only a random spool id.
+`UploadWorker` compares `FileCrypto.ciphertextSize` against `/api/me`'s
+`limits.maxFileBytes` before reserving, then reserves, stream-encrypts a known-length
+OkHttp request body to the existing direct/proxy transfer target, and posts the
+encrypted push. It persists the uploaded file id before POST, so a lost response
+retries the identical full push request without another reservation or PUT.
+Work is expedited where quota allows and uses a `dataSync` foreground notification
+on the low-importance `transfers` channel. Network I/O, 429 and 5xx retry with
+WorkManager backoff; other 4xx, changed sessions, and unreadable spools/sources
+fail terminally. Progress/fixed errors contain no payloads, credentials or keys.
+
+Downloads occur only after an explicit action. `DownloadWorker` resolves the file
+target, streams GET through `FileCrypto`, and writes only to
+`MediaStore.Downloads` under `Download/Pneumo/` on API 29+, using `IS_PENDING` until
+authentication succeeds. API 26–28 uses the app-specific external
+`Download/Pneumo/` directory and a narrowly scoped FileProvider. Collisions append
+` (1)`, ` (2)`, etc. before the extension. Failures and cancellation delete the
+partial output; invalid headers/tags/truncation show exactly
+"This file was corrupted or tampered with". WorkManager records only ids, numeric
+progress, the completed content URI, and fixed errors. Home observes the same
+download state as the notification; its Open/Share use the decrypted payload MIME
+type without persisting that payload.
+Generic or wildcard MIME types use the saved display-name extension for Open/Share;
+explicit MIME types take precedence. This lookup stays in memory and lets an
+`application/octet-stream` PNG from dev-client open in an installed image viewer.
+
+JVM worker tests use `WorkManagerTestInitHelper` and MockWebServer for direct/proxy
+requests, upload round trips at 0 B, 1 B, 65,536 B and 1 MiB, downloaded bytes,
+tampering/partial cleanup, network retry, session mismatch and lost-POST-response
+idempotency. `androidx.work:work-testing` is the only added dependency, pinned to
+the existing WorkManager `2.12.0`.
+
 
 
 ## Screenshots
@@ -296,6 +349,15 @@ re-recorded for the real destinations: `main-shell-home`, `main-shell-devices`,
 `main-shell-settings-notifications-off`, and `main-shell-sign-out-error`, each with
 `-light.png` and `-dark.png`. Pair, Confirm, Onboarding, and connection goldens are
 unchanged.
+ENG-266 adds 24 light/dark goldens: composer files/preparation, upload progress/error,
+download progress/done/error, file sharing, and all four transfer-notification
+states. Notification previews render Android's real expanded RemoteViews templates
+on their standalone framework light surface; SystemUI owns the runtime shade
+palette. The 24 existing Home goldens, `main-shell-home`, `share-invalid`, and
+`share-not-paired` (each light/dark) are deliberately re-recorded for attachment
+controls, file actions, and the updated file-capable wording. Other goldens are
+unchanged.
+
 
 
 Only record when intentionally changing the expected UI:
@@ -329,6 +391,14 @@ WorkManager retry after the sheet finishes and checks that the identical encrypt
 request reaches Home once. JVM tests also cover retryable versus terminal errors
 and collect history on Main while checking that actual cipher key access occurs
 on a different thread.
+`FileTransferSmokeTest` shares a granted content URI, lets the real upload worker
+finish after the sheet closes, invokes the posted notification's Download action,
+compares the saved bytes, and verifies Open/Share replace the same notification id.
+The loopback fixture handles binary bodies and closed idle connections.
+Notification-posting cases live under `notify`, following the existing
+notification tests after the shell's denied-permission case. Revoking an already
+granted runtime permission would kill the shared instrumentation process.
+
 Turbine/JVM tests additionally cover key mismatch deletion/wipe,
 expired codes, consumed-code retries, replacement ViewModels, sign-out and
 onboarding persistence. QR analyzer tests decode padded luminance frames and
@@ -338,8 +408,9 @@ history launches and stored-session precedence over cold and warm foreign links.
 
 `PushNotificationGroupTest` posts three pushes back-to-back against the managed
 device's real notification service. It verifies that Copy and a system-style
-dismissal leave both unread children posted, and that the summary survives until
-the last child is removed. Each expected state must remain stable while queued
+dismissal leave both unread children posted, that a downloaded-file replacement
+preserves all three children, and that the summary survives until the last child
+is removed. Each expected state must remain stable while queued
 notification-service operations settle. Robolectric does not model Android's
 summary-cancellation cascade, so it cannot replace this device regression.
 
@@ -369,6 +440,21 @@ font-scale 1.3 captures are saved under ignored `apps/android/build/acceptance/`
 including `share-url-final.png`, `home-link-final.png`, and
 `home-note-link-dark-large-text.png`. The emulator, isolated random-port server,
 MinIO, temporary sessions, and temporary AVD were stopped or removed afterwards.
+
+ENG-266's isolated API 34 Google APIs emulator paired by deep link with a
+random-port server and MinIO. Sharing a PNG from Photos through the system share
+sheet produced a byte-identical `dev-client download`; the Home system document
+picker also sent two files without requiring message text. In the reverse
+direction, `dev-client send file` produced a notification whose Download action
+saved identical bytes; Open launched Photos, and in-app Share opened the system
+chooser. A repeat download produced `image (1).png`. SHA-256 in both directions:
+`786a609e335e69e5408f236dcbf75d1d7d8e13f7d14efb2bca3842117b80560c`.
+Ignored captures under `apps/android/build/acceptance/` include
+`share-image-ready.png`, `notification-download.png`,
+`notification-open-share.png`, `download-opened.png`,
+`download-share-chooser.png`, and `composer-multiple-ready.png`.
+The emulator, isolated server/MinIO, temporary sessions, AVD, and harness were
+stopped or removed after acceptance.
 
 
 ATDs disable drawing by default and omit Settings/SystemUI. For a manual screenshot

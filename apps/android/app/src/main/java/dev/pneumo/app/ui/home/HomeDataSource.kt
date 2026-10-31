@@ -1,5 +1,7 @@
 package dev.pneumo.app.ui.home
 
+import android.content.Context
+import android.net.Uri
 import dev.pneumo.app.data.AppSession
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.toEntity
@@ -9,6 +11,10 @@ import dev.pneumo.app.protocol.DeviceDTO
 import dev.pneumo.app.protocol.ListPushesResponse
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.sync.DecryptedPush
+import dev.pneumo.app.transfer.UploadAttachment
+import dev.pneumo.app.transfer.UploadAttachments
+import dev.pneumo.app.transfer.UploadOptions
+import dev.pneumo.app.transfer.UploadScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -27,11 +33,20 @@ internal interface HomeDataSource {
 
     suspend fun createPush(request: CreatePushRequest): PushDTO
 
+    suspend fun prepareUploads(uris: List<Uri>): List<UploadAttachment>
+
+    fun discardUploads(attachments: List<UploadAttachment>)
+
+    suspend fun enqueueFiles(attachments: List<UploadAttachment>, targetDeviceId: String?, body: String)
+
     suspend fun deletePush(id: String)
 }
 
-internal class RoomHomeDataSource(private val session: AppSession, private val database: PneumoDatabase) :
-    HomeDataSource {
+internal class RoomHomeDataSource(
+    private val session: AppSession,
+    private val database: PneumoDatabase,
+    private val context: Context
+) : HomeDataSource {
     override val history: Flow<List<DecryptedPush>> = session.pushes.observeAll().flowOn(Dispatchers.Default)
     override val devices: Flow<List<DeviceDTO>> = database.invalidationTracker
         .createFlow("devices", emitInitialState = true)
@@ -82,6 +97,32 @@ internal class RoomHomeDataSource(private val session: AppSession, private val d
         }
     }
 
+    override suspend fun prepareUploads(uris: List<Uri>): List<UploadAttachment> =
+        UploadAttachments.prepare(context, uris)
+
+    override fun discardUploads(attachments: List<UploadAttachment>) = UploadAttachments.discard(context, attachments)
+
+    override suspend fun enqueueFiles(attachments: List<UploadAttachment>, targetDeviceId: String?, body: String) {
+        val limits = try {
+            session.api.me().limits
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: java.io.IOException) {
+            null
+        }
+        UploadScheduler.enqueue(
+            context = context,
+            session = session,
+            attachments = attachments,
+            options = UploadOptions(
+                targetDeviceId = targetDeviceId,
+                body = body,
+                maxFileBytes = limits?.maxFileBytes ?: DEFAULT_MAX_FILE_BYTES,
+                maxEnvelopeBytes = limits?.maxEnvelopeBytes ?: session.maxEnvelopeBytes
+            )
+        )
+    }
+
     override suspend fun deletePush(id: String) {
         session.cache.withPushes(session.generation) {
             try {
@@ -95,5 +136,6 @@ internal class RoomHomeDataSource(private val session: AppSession, private val d
 
     private companion object {
         const val HTTP_NOT_FOUND = 404
+        const val DEFAULT_MAX_FILE_BYTES = 524_288_000L
     }
 }

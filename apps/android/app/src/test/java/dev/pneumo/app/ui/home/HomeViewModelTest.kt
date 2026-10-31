@@ -518,6 +518,20 @@ class HomeViewModelTest {
 
         override suspend fun maxEnvelopeBytes(): Long = envelopeLimit
 
+        override suspend fun prepareUploads(
+            uris: List<android.net.Uri>
+        ): List<dev.pneumo.app.transfer.UploadAttachment> = error("No attachments supplied in text tests")
+
+        override fun discardUploads(attachments: List<dev.pneumo.app.transfer.UploadAttachment>) {
+            check(attachments.isEmpty())
+        }
+
+        override suspend fun enqueueFiles(
+            attachments: List<dev.pneumo.app.transfer.UploadAttachment>,
+            targetDeviceId: String?,
+            body: String
+        ) = error("No attachments supplied in text tests")
+
         override suspend fun loadPage(before: String?): ListPushesResponse {
             listedBefore += before
             listGate?.await()

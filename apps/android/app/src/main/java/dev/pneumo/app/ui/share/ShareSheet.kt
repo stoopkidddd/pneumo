@@ -43,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pneumo.app.R
+import dev.pneumo.app.transfer.UploadAttachment
 import dev.pneumo.app.ui.screens.ErrorMessage
 import dev.pneumo.app.ui.screens.PrimaryButton
 
@@ -59,6 +60,7 @@ internal data class ShareDevice(val id: String, val name: String, val online: Bo
 internal data class ShareUiState(
     val mode: ShareMode = ShareMode.Loading,
     val sharedText: SharedText? = null,
+    val files: List<UploadAttachment> = emptyList(),
     val isLink: Boolean = false,
     val devices: List<ShareDevice> = emptyList(),
     val selectedTargetId: String? = null,
@@ -181,9 +183,17 @@ private fun LoadErrorContent(onRetry: () -> Unit) {
 
 @Composable
 private fun ReadyContent(state: ShareUiState, actions: ShareActions) {
-    val sharedText = state.sharedText ?: return
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SharedTextPreview(sharedText, state.isLink)
+        if (state.files.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.files.forEach { file ->
+                    Text(file.name, style = MaterialTheme.typography.titleSmall)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            }
+        } else {
+            state.sharedText?.let { SharedTextPreview(it, state.isLink) }
+        }
         TargetPicker(
             devices = state.devices,
             selectedTargetId = state.selectedTargetId,
@@ -196,7 +206,17 @@ private fun ReadyContent(state: ShareUiState, actions: ShareActions) {
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.sending,
             label = { Text(stringResource(R.string.share_message_label)) },
-            supportingText = { Text(stringResource(R.string.share_message_supporting)) },
+            supportingText = {
+                Text(
+                    stringResource(
+                        if (state.files.isEmpty()) {
+                            R.string.share_message_supporting
+                        } else {
+                            R.string.share_file_message_supporting
+                        }
+                    )
+                )
+            },
             minLines = 2,
             maxLines = 4,
             shape = MaterialTheme.shapes.small

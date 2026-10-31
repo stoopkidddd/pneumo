@@ -1,10 +1,12 @@
 package dev.pneumo.app.ui.home
 
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import androidx.core.net.toUri
 import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.protocol.DeviceDTO
 import dev.pneumo.app.protocol.Envelope
@@ -16,6 +18,8 @@ import dev.pneumo.app.protocol.Platform
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.protocol.PushFile
 import dev.pneumo.app.sync.DecryptedPush
+import dev.pneumo.app.transfer.DownloadState
+import dev.pneumo.app.transfer.UploadAttachment
 import dev.pneumo.app.ui.theme.PneumoTheme
 
 enum class HomePreviewCase(val fileName: String) {
@@ -30,7 +34,14 @@ enum class HomePreviewCase(val fileName: String) {
     DeleteUndo("home-delete-undo"),
     ComposerIdle("home-composer-idle"),
     ComposerSending("home-composer-sending"),
-    ComposerError("home-composer-error")
+    ComposerError("home-composer-error"),
+    ComposerFiles("home-composer-files"),
+    PreparingFiles("home-preparing-files"),
+    Uploading("home-uploading"),
+    UploadFailed("home-upload-failed"),
+    Downloading("home-downloading"),
+    DownloadDone("home-download-done"),
+    DownloadFailed("home-download-failed")
 }
 
 class HomePreviewProvider : PreviewParameterProvider<HomePreviewCase> {
@@ -48,23 +59,6 @@ internal fun HomePreview(@PreviewParameter(HomePreviewProvider::class) fixture: 
 fun HomePreviewContent(fixture: HomePreviewCase) {
     val devices = previewDevices()
     val pushes = previewHistory(fixture)
-    val composer = when (fixture) {
-        HomePreviewCase.ComposerIdle -> HomeComposerState(text = "A note for my other devices")
-
-        HomePreviewCase.ComposerSending -> HomeComposerState(
-            text = "https://pneumo.example.com/dispatch",
-            targetDeviceId = DEVICE_ANDROID,
-            sending = true
-        )
-
-        HomePreviewCase.ComposerError -> HomeComposerState(
-            text = "Keep this draft after a failed send",
-            targetDeviceId = DEVICE_WEB,
-            error = "Could not send. Check your connection and try again."
-        )
-
-        else -> HomeComposerState()
-    }
     HomeScreen(
         state = HomeUiState(
             pushes = pushes,
@@ -79,7 +73,8 @@ fun HomePreviewContent(fixture: HomePreviewCase) {
             highlightedPushId = if (fixture == HomePreviewCase.ListLink) PUSH_LINK else null,
             hiddenPushIds = if (fixture == HomePreviewCase.DeleteUndo) setOf(PUSH_NOTE) else emptySet(),
             undoPushId = if (fixture == HomePreviewCase.DeleteUndo) PUSH_NOTE else null,
-            composer = composer
+            composer = previewComposer(fixture),
+            downloads = previewDownloads(fixture)
         ),
         connection = if (fixture == HomePreviewCase.Offline) {
             ConnectionState.Offline
@@ -90,12 +85,57 @@ fun HomePreviewContent(fixture: HomePreviewCase) {
     )
 }
 
+private fun previewComposer(fixture: HomePreviewCase): HomeComposerState = when (fixture) {
+    HomePreviewCase.ComposerIdle -> HomeComposerState(text = "A note for my other devices")
+
+    HomePreviewCase.ComposerSending -> HomeComposerState(
+        text = "https://pneumo.example.com/dispatch",
+        targetDeviceId = DEVICE_ANDROID,
+        sending = true
+    )
+
+    HomePreviewCase.ComposerError -> HomeComposerState(
+        text = "Keep this draft after a failed send",
+        targetDeviceId = DEVICE_WEB,
+        error = "Could not send. Check your connection and try again."
+    )
+
+    HomePreviewCase.ComposerFiles -> HomeComposerState(
+        text = "Here is the plan",
+        attachments = listOf(
+            UploadAttachment(Uri.EMPTY, "switchboard-plan.pdf", "application/pdf", PREVIEW_FILE_SIZE)
+        )
+    )
+
+    HomePreviewCase.PreparingFiles -> HomeComposerState(preparingAttachments = true)
+
+    HomePreviewCase.Uploading -> HomeComposerState(uploadProgress = PREVIEW_TRANSFER_PROGRESS)
+
+    HomePreviewCase.UploadFailed -> HomeComposerState(uploadError = "Could not upload. Share the file again.")
+
+    else -> HomeComposerState()
+}
+
+private fun previewDownloads(fixture: HomePreviewCase): Map<String, DownloadState> = when (fixture) {
+    HomePreviewCase.Downloading -> mapOf(PUSH_FILE to DownloadState.Downloading(PREVIEW_TRANSFER_PROGRESS))
+
+    HomePreviewCase.DownloadDone ->
+        mapOf(PUSH_FILE to DownloadState.Done("content://downloads/1".toUri(), "application/pdf"))
+
+    HomePreviewCase.DownloadFailed ->
+        mapOf(PUSH_FILE to DownloadState.Failed("This file was corrupted or tampered with"))
+
+    else -> emptyMap()
+}
+
 private fun previewHistory(fixture: HomePreviewCase): List<DecryptedPush> {
     val allPushes = previewPushes()
     val pushes = when (fixture) {
         HomePreviewCase.Empty, HomePreviewCase.Loading, HomePreviewCase.HistoryError,
         HomePreviewCase.ComposerIdle, HomePreviewCase.ComposerSending,
-        HomePreviewCase.ComposerError -> emptyList()
+        HomePreviewCase.ComposerError, HomePreviewCase.ComposerFiles,
+        HomePreviewCase.PreparingFiles, HomePreviewCase.Uploading,
+        HomePreviewCase.UploadFailed -> emptyList()
 
         HomePreviewCase.ListAllTypes, HomePreviewCase.Offline,
         HomePreviewCase.DeleteUndo -> allPushes
@@ -104,7 +144,8 @@ private fun previewHistory(fixture: HomePreviewCase): List<DecryptedPush> {
 
         HomePreviewCase.ListLink -> allPushes.filter { it.push.id == PUSH_LINK }
 
-        HomePreviewCase.ListFile -> allPushes.filter { it.push.id == PUSH_FILE }
+        HomePreviewCase.ListFile, HomePreviewCase.Downloading,
+        HomePreviewCase.DownloadDone, HomePreviewCase.DownloadFailed -> allPushes.filter { it.push.id == PUSH_FILE }
     }
     return pushes
 }
@@ -191,3 +232,5 @@ private const val PUSH_NOTE = "019a3a20-2000-7000-8000-000000000001"
 private const val PUSH_LINK = "019a3a20-2000-7000-8000-000000000002"
 private const val PUSH_FILE = "019a3a20-2000-7000-8000-000000000003"
 private const val FILE_ID = "019a3a20-3000-7000-8000-000000000001"
+private const val PREVIEW_FILE_SIZE = 248_832L
+private const val PREVIEW_TRANSFER_PROGRESS = 42

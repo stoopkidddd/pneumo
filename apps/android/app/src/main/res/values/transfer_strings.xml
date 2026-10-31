@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="transfer_attach">Attach files</string>
+    <string name="transfer_remove">Remove files</string>
+    <string name="transfer_preparing">Preparing files…</string>
+    <string name="transfer_uploading">Uploading…</string>
+    <string name="transfer_downloading">Downloading…</string>
+    <string name="transfer_download">Download</string>
+    <string name="transfer_retry">Retry download</string>
+    <string name="transfer_open">Open</string>
+    <string name="transfer_share">Share</string>
+</resources>

@@ -115,14 +115,14 @@ class NotificationActionsTest {
     }
 
     @Test
-    fun downloadActionShowsComingSoonAndKeepsNotification() = runTest {
+    fun downloadActionTargetsReceiverWithPushIdentityAndKeepsNotificationUntilWorkStarts() = runTest {
         post(ID_1, LinkPayload(url = "https://example.test"))
         val pending = NotificationIntents.download(context, ID_1)
+        val download = shadowOf(pending).savedIntent
 
-        pending.send()
-        shadowOf(Looper.getMainLooper()).idle()
-
-        assertEquals("Coming soon", ShadowToast.getTextOfLatestToast())
+        assertEquals(DownloadRequestedReceiver::class.java.name, download.component?.className)
+        assertEquals(DownloadRequestedReceiver.ACTION_DOWNLOAD, download.action)
+        assertEquals(ID_1, download.getStringExtra(NotificationIntents.EXTRA_PUSH_ID))
         assertNotNull(manager.activeNotifications.singleOrNull { it.tag == ID_1 })
     }
 

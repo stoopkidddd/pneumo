@@ -27,6 +27,7 @@ internal class HomeViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = mutableState.asStateFlow()
+    val attachments = HomeAttachments(source, mutableState, viewModelScope)
 
     private val deleteJobs = mutableMapOf<String, Job>()
     private var refreshJob: Job? = null
@@ -118,27 +119,31 @@ internal class HomeViewModel(
 
     fun send() {
         val composer = mutableState.value.composer
-        if (composer.sending || composer.text.isBlank()) return
+        if (!composer.canSend) return
         mutableState.update { state ->
             state.copy(composer = state.composer.copy(sending = true, error = null))
         }
         viewModelScope.launch {
             try {
-                val payload = TextPushes.payload(composer.text)
-                val envelopeLimit = try {
-                    source.maxEnvelopeBytes()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: IOException) {
-                    maxEnvelopeBytes
+                if (composer.attachments.isNotEmpty()) {
+                    source.enqueueFiles(composer.attachments, composer.targetDeviceId, composer.text)
+                } else {
+                    val payload = TextPushes.payload(composer.text)
+                    val envelopeLimit = try {
+                        source.maxEnvelopeBytes()
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: IOException) {
+                        maxEnvelopeBytes
+                    }
+                    val request = TextPushes.request(
+                        payload = payload,
+                        targetDeviceId = composer.targetDeviceId,
+                        contentKey = contentKey,
+                        maxEnvelopeBytes = envelopeLimit
+                    )
+                    source.createPush(request)
                 }
-                val request = TextPushes.request(
-                    payload = payload,
-                    targetDeviceId = composer.targetDeviceId,
-                    contentKey = contentKey,
-                    maxEnvelopeBytes = envelopeLimit
-                )
-                source.createPush(request)
                 mutableState.update { state ->
                     state.copy(composer = HomeComposerState(targetDeviceId = state.composer.targetDeviceId))
                 }

@@ -95,7 +95,7 @@ class RoomHomeDataSourceTest {
             cache = cache,
             generation = cache.generation()
         )
-        val source = RoomHomeDataSource(session, database)
+        val source = RoomHomeDataSource(session, database, ApplicationProvider.getApplicationContext<Application>())
 
         val page = async(start = CoroutineStart.UNDISPATCHED) { source.loadPage(before = null) }
         assertTrue(pageStarted.await(5, TimeUnit.SECONDS))
@@ -143,7 +143,8 @@ class RoomHomeDataSourceTest {
                 cache = cache,
                 generation = cache.generation()
             ),
-            database
+            database,
+            ApplicationProvider.getApplicationContext<Application>()
         )
 
         val history = withContext(Dispatchers.Main.immediate) {

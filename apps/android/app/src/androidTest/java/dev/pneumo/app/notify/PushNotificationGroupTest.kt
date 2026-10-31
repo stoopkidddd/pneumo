@@ -3,6 +3,7 @@ package dev.pneumo.app.notify
 import android.Manifest
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,9 +11,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.pneumo.app.crypto.PushCrypto
 import dev.pneumo.app.protocol.NotePayload
 import dev.pneumo.app.protocol.PushDTO
+import dev.pneumo.app.transfer.DownloadNotifications
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -58,6 +61,22 @@ class PushNotificationGroupTest {
         awaitTags(setOf(IDS[2], PushNotificationGroup.SUMMARY_TAG))
         notifier.cancel(IDS[2])
         awaitTags(emptySet())
+    }
+
+    @Test
+    fun completedDownloadReplacesTaggedChildWithoutChangingSummaryMembership() = runBlocking {
+        postBurst()
+        awaitTags(IDS.toSet() + PushNotificationGroup.SUMMARY_TAG)
+
+        DownloadNotifications(context, IDS.first()).postComplete(
+            name = "report.pdf",
+            uri = Uri.parse("content://dev.pneumo.app.files/downloads/report.pdf"),
+            mime = "application/pdf"
+        )
+
+        awaitTags(IDS.toSet() + PushNotificationGroup.SUMMARY_TAG)
+        val completed = manager.activeNotifications.single { it.tag == IDS.first() }.notification
+        assertEquals(listOf("Open", "Share"), completed.actions.map { it.title.toString() })
     }
 
     @Test

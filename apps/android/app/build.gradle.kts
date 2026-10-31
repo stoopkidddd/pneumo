@@ -138,6 +138,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.work.testing)
     ksp(libs.androidx.room.compiler)
 
     androidTestImplementation(platform(libs.compose.bom))

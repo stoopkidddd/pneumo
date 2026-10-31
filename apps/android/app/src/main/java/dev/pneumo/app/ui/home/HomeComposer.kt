@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,12 +21,15 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +69,18 @@ internal fun HomeComposer(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ComposerMessageField(state, actions.onTextChange)
-                if (isLink) LinkDetected()
+                if (isLink && state.attachments.isEmpty()) LinkDetected()
+                ComposerAttachments(state, actions)
+                state.uploadProgress?.let { progress ->
+                    Text(stringResource(R.string.transfer_uploading), style = MaterialTheme.typography.labelMedium)
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                state.uploadError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                }
                 ComposerControls(
                     state = state,
                     devices = devices,
@@ -101,6 +116,26 @@ private fun ComposerMessageField(state: HomeComposerState, onTextChange: (String
 }
 
 @Composable
+private fun ComposerAttachments(state: HomeComposerState, actions: HomeComposerActions) {
+    if (state.preparingAttachments) {
+        Text(stringResource(R.string.transfer_preparing), style = MaterialTheme.typography.bodyMedium)
+    } else if (state.attachments.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                state.attachments.joinToString { it.name },
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            TextButton(onClick = actions.onRemoveAttachments, enabled = !state.sending) {
+                Text(stringResource(R.string.transfer_remove))
+            }
+        }
+    }
+}
+
+@Composable
 private fun LinkDetected() {
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -132,6 +167,9 @@ private fun ComposerControls(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        IconButton(onClick = actions.onAttach, enabled = !state.sending && !state.preparingAttachments) {
+            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.transfer_attach))
+        }
         TargetPicker(
             devices = devices,
             selectedId = state.targetDeviceId,
@@ -141,7 +179,7 @@ private fun ComposerControls(
         )
         ComposerSendButton(
             sending = state.sending,
-            enabled = state.text.isNotBlank() && !state.sending && !offline,
+            enabled = state.canSend && (!offline || state.attachments.isNotEmpty()),
             onSend = actions.onSend
         )
     }
