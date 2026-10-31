@@ -12,6 +12,7 @@ import { createLogger } from "./log.js";
 import { S3Storage } from "./storage/s3.js";
 import { resolveUploadMode } from "./storage/upload-mode.js";
 import { startSweeps } from "./sweeps/index.js";
+import { startWebPushSender } from "./webpush/sender.js";
 import { loadVapidKeys } from "./webpush/vapid.js";
 import { attachWebSocketHub } from "./ws/hub.js";
 
@@ -36,6 +37,7 @@ try {
   const pushes = await PushIndex.load({ storage, events });
   const files = new FileRegistry();
   const shutdownHooks: ShutdownHook[] = [
+    startWebPushSender({ devices, events, config, vapidKeys, clock: systemClock, logger }),
     startReconciliation({ pushes, scheduler: systemScheduler, logger }),
     startSweeps({
       storage,

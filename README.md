@@ -65,8 +65,19 @@ public key. Device DTOs never expose token hashes or subscriptions.
 
 When `meta/vapid.json` is missing, startup generates a P-256 VAPID keypair and persists
 `{ publicKey, privateKey, subject }`. The subject is `VAPID_SUBJECT`, defaulting to `PUBLIC_URL`.
-Later boots reuse the stored record. The private key is never returned by the API and is
-redacted from structured logs. Web Push sending is not implemented yet.
+Later boots reuse the stored keypair, but sending uses the current `VAPID_SUBJECT` configuration,
+not the persisted subject. It must use `https:` or `mailto:`; an HTTP development origin or
+invalid subject disables delivery with a warning, without preventing boot or push creation.
+For local development, set a `mailto:` subject explicitly. The private key is never returned
+by the API and is redacted from structured logs.
+
+Web Push sends to subscribed web devices other than the source, respecting the push target.
+It runs asynchronously with four workers, a 1,000-delivery waiting queue and a ten-second
+deadline per send. Overflow drops the oldest waiting delivery and logs a warning. Messages
+use TTL 86,400 seconds and high urgency: the full push fits up to 3,000 UTF-8 JSON bytes,
+otherwise only its id is sent for the service worker to fetch. A push-service 404 or 410
+clears the subscription in the bucket; other failures retain it. Endpoint URLs and keys
+are never included in sender logs.
 
 Server bucket access uses the `Storage` contract in `apps/server/src/storage/types.ts`.
 `S3Storage` is used at runtime; tests use `MemoryStorage` or an isolated MinIO instance.
@@ -98,7 +109,8 @@ a different body returns 409. History is newest first by `(createdAt, id)`, with
 empty page. Deleting a push also deletes its encrypted file. The in-memory index has a
 soft operating limit of about 20,000 pushes; compaction is not implemented. Every thirty
 seconds, reconciliation merges unknown records from the first 100 bucket keys and emits
-`push` events. The WebSocket hub consumes server events; Web Push sending is not implemented yet.
+`push` events. Both the WebSocket hub and Web Push sender consume these events. Web Push
+deduplicates push ids for ten minutes, including events merged by reconciliation.
 
 `GET /api/ws` upgrades on the same HTTP server. Send a protocol `hello` within ten seconds;
 the deadline stops when a schema-valid hello arrives, so slow authentication does not

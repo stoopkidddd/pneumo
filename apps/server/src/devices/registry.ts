@@ -126,6 +126,10 @@ export class DeviceRegistry {
     return [...this.records.values()].map((record) => this.toDTO(record));
   }
 
+  getWebPush(id: string): WebPushSubscription | null {
+    return this.records.get(id)?.webPush ?? null;
+  }
+
   setOnline(id: string, online: boolean): void {
     if (online && this.records.has(id)) {
       this.online.add(id);
