@@ -16,6 +16,7 @@ import { EventBus } from "../events.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { MemoryStorage } from "../storage/memory.js";
+import { loadVapidKeys } from "../webpush/vapid.js";
 
 const SETUP_TOKEN = "fixed-test-setup";
 const PASSPHRASE = "correct horse battery staple";
@@ -59,6 +60,7 @@ async function fixture(options: { trustProxy?: boolean; setupToken?: string } = 
   const logger = createLogger("info", destination);
   const instanceState = await InstanceState.load({ storage, config, clock, logger });
   const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+  const vapidKeys = await loadVapidKeys({ storage, config });
   const app = createApp({
     config,
     storage,
@@ -67,6 +69,7 @@ async function fixture(options: { trustProxy?: boolean; setupToken?: string } = 
     instanceState,
     devices,
     uploadMode: "proxy",
+    vapidPublicKey: vapidKeys.publicKey,
   });
   return {
     app,

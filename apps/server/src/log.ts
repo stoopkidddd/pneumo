@@ -47,6 +47,7 @@ const SECRET_KEYS: Record<string, true> = {
   envelope: true,
   p256dh: true,
   auth: true,
+  privatekey: true,
   s3_access_key_id: true,
   s3_secret_access_key: true,
 };

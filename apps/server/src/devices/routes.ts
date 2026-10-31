@@ -14,13 +14,12 @@ import { readJson } from "../http/json.js";
 export function createDeviceRoutes(deps: AppDependencies): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const authenticate = bearerAuth(deps.devices);
-  const meResponse = MeResponse.omit({ vapidPublicKey: true });
 
   routes.get("/me", authenticate, (c) => {
     const owner = deps.instanceState.owner;
     if (owner === null) return errorResponse(c, "not_initialized");
 
-    const response = meResponse.parse({
+    const response = MeResponse.parse({
       device: c.get("device"),
       keyCheck: owner.keyCheck,
       limits: {
@@ -28,8 +27,9 @@ export function createDeviceRoutes(deps: AppDependencies): Hono<AppEnv> {
         maxEnvelopeBytes: deps.config.MAX_ENVELOPE_BYTES,
       },
       uploadMode: deps.uploadMode,
+      vapidPublicKey: deps.vapidPublicKey,
     });
-    return c.json({ ...response, vapidPublicKey: null });
+    return c.json(response);
   });
 
   routes.get("/devices", authenticate, (c) =>

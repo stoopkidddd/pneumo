@@ -12,6 +12,7 @@ import {
   CreatePairResponse,
   ListDevicesResponse,
   LoginResponse,
+  MeResponse,
   type SetupRequest,
   SetupResponse,
 } from "@pneumo/protocol";
@@ -24,6 +25,7 @@ import { EventBus } from "../events.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { S3Storage } from "../storage/s3.js";
+import { loadVapidKeys } from "../webpush/vapid.js";
 
 const minio = inject("minio");
 const serverDir = new URL("../../", import.meta.url);
@@ -103,6 +105,7 @@ test("MinIO persists the owner once and reloads and removes device records", asy
   try {
     const instanceState = await InstanceState.load({ storage, config, clock, logger });
     const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+    const vapidKeys = await loadVapidKeys({ storage, config });
     const app = createApp({
       config,
       storage,
@@ -111,6 +114,7 @@ test("MinIO persists the owner once and reloads and removes device records", asy
       instanceState,
       devices,
       uploadMode: "proxy",
+      vapidPublicKey: vapidKeys.publicKey,
     });
     const first = await app.request("/api/setup", {
       method: "POST",
@@ -149,9 +153,14 @@ test("MinIO persists the owner once and reloads and removes device records", asy
       headers: { Authorization: `Bearer ${owner.token}` },
     });
     expect(seen.status).toBe(200);
+    const seenMe = MeResponse.parse(await seen.json());
+    expect(Buffer.from(seenMe.vapidPublicKey, "base64url").length).toBe(65);
+    expect(seenMe.vapidPublicKey).toBe(vapidKeys.publicKey);
 
     const reloadedState = await InstanceState.load({ storage, config, clock, logger });
     const reloadedDevices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+    const reloadedVapidKeys = await loadVapidKeys({ storage, config });
+    expect(reloadedVapidKeys.publicKey).toBe(vapidKeys.publicKey);
     expect(reloadedState.initialized).toBe(true);
     expect((await reloadedDevices.authenticate(owner.token))?.id).toBe(owner.device.id);
     expect(reloadedDevices.get(owner.device.id)?.name).toBe("Renamed owner");
@@ -168,6 +177,7 @@ test("MinIO persists the owner once and reloads and removes device records", asy
       instanceState: reloadedState,
       devices: reloadedDevices,
       uploadMode: "proxy",
+      vapidPublicKey: reloadedVapidKeys.publicKey,
     });
     const cleared = await reloadedApp.request("/api/devices/self/webpush", {
       method: "DELETE",
@@ -309,11 +319,15 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
     });
     expect(loginResponse.status).toBe(201);
     const second = LoginResponse.parse(await loginResponse.json());
-    const me = (await (
-      await fetch(`${origin}/api/me`, { headers: bearer(second.token) })
-    ).json()) as Record<string, unknown>;
+    const meResponse = await fetch(`${origin}/api/me`, { headers: bearer(second.token) });
+    expect(meResponse.status).toBe(200);
+    const meBody: unknown = await meResponse.json();
+    const me = MeResponse.parse(meBody);
     expect(me.keyCheck === setupRequest.keyCheck).toBe(true);
-    expect(me.vapidPublicKey).toBeNull();
+    expect(Buffer.from(me.vapidPublicKey, "base64url").length).toBe(65);
+    const vapidKeys = await loadVapidKeys({ storage: cleanup, config: s3Config(prefix) });
+    expect(me.vapidPublicKey).toBe(vapidKeys.publicKey);
+    expect(JSON.stringify(meBody).includes(vapidKeys.privateKey)).toBe(false);
 
     const devices = ListDevicesResponse.parse(
       await (await fetch(`${origin}/api/devices`, { headers: bearer(owner.token) })).json(),
@@ -338,6 +352,7 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
     expect(running.output().includes(owner.token)).toBe(false);
     expect(running.output().includes(second.token)).toBe(false);
     expect(running.output().includes(phone.token)).toBe(false);
+    expect(running.output().includes(vapidKeys.privateKey)).toBe(false);
 
     const [exitCode, exitSignal] = await stopRuntime(child);
     expect(exitCode).toBe(0);
@@ -352,9 +367,13 @@ test("bundled runtime serves the changed auth and pairing paths and reloads MinI
       version: packageJson.version,
       initialized: true,
     });
-    expect((await fetch(`${reloadedOrigin}/api/me`, { headers: bearer(owner.token) })).status).toBe(
-      200,
-    );
+    const reloadedMeResponse = await fetch(`${reloadedOrigin}/api/me`, {
+      headers: bearer(owner.token),
+    });
+    expect(reloadedMeResponse.status).toBe(200);
+    const reloadedMe = MeResponse.parse(await reloadedMeResponse.json());
+    expect(reloadedMe.vapidPublicKey).toBe(me.vapidPublicKey);
+    expect(reloaded.output().includes(vapidKeys.privateKey)).toBe(false);
     expect((await requestJson(reloadedOrigin, "/api/setup", setupRequest)).status).toBe(409);
   } finally {
     try {

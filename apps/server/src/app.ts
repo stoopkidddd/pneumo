@@ -33,6 +33,7 @@ export interface AppDependencies {
   instanceState: InstanceState;
   devices: DeviceRegistry;
   uploadMode: UploadMode;
+  vapidPublicKey: string;
 }
 
 export type AppEnv = {

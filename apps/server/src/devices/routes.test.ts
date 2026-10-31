@@ -18,6 +18,7 @@ import { EventBus } from "../events.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { MemoryStorage } from "../storage/memory.js";
+import { loadVapidKeys } from "../webpush/vapid.js";
 import { DeviceRegistry } from "./registry.js";
 
 const SETUP_TOKEN = "fixed-test-setup";
@@ -55,6 +56,7 @@ async function initializedFixture() {
   const instanceState = await InstanceState.load({ storage, config, clock, logger });
   const events = new EventBus();
   const devices = await DeviceRegistry.load({ storage, clock, events });
+  const vapidKeys = await loadVapidKeys({ storage, config });
   const app = createApp({
     config,
     storage,
@@ -63,6 +65,7 @@ async function initializedFixture() {
     instanceState,
     devices,
     uploadMode: "proxy",
+    vapidPublicKey: vapidKeys.publicKey,
   });
   const setupResponse = await app.request("/api/setup", {
     method: "POST",
@@ -78,6 +81,7 @@ async function initializedFixture() {
     instanceState,
     owner,
     storage,
+    vapidKeys,
     advance(ms: number) {
       now += ms;
     },
@@ -130,15 +134,16 @@ describe("bearer-protected device routes", () => {
     }
   });
 
-  test("GET /me returns keyCheck and limits, null VAPID, and no stored device secrets", async () => {
+  test("GET /me satisfies the full client contract without exposing stored secrets", async () => {
     const target = await initializedFixture();
     const response = await target.app.request("/api/me", {
       headers: authorization(target.owner.token),
     });
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
-    const parsed = MeResponse.omit({ vapidPublicKey: true }).parse(body);
-    expect(body.vapidPublicKey).toBeNull();
+    const parsed = MeResponse.parse(body);
+    expect(parsed.vapidPublicKey).toBe(target.vapidKeys.publicKey);
+    expect(JSON.stringify(body).includes(target.vapidKeys.privateKey)).toBe(false);
     expect(parsed.keyCheck === setupRequest.keyCheck).toBe(true);
     expect(parsed.limits).toEqual({ maxFileBytes: 123456, maxEnvelopeBytes: 54321 });
     expect(parsed.uploadMode).toBe("proxy");

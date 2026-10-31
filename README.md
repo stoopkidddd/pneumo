@@ -44,8 +44,8 @@ mise exec -- node --env-file=.env.local apps/server/dist/index.js
 
 The server serves the built web app and `GET /api/health`. `WEB_DIST_DIR` defaults to
 `apps/web/dist`, resolved relative to the server rather than the current directory. Before
-listening, the server loads `meta/owner.json` and the device registry from the bucket.
-Health reports the package version and whether the owner record exists.
+listening, the server loads `meta/owner.json`, the device registry, and the VAPID keypair
+from the bucket. Health reports the package version and whether the owner record exists.
 
 First-run setup uses `PNEUMO_SETUP_TOKEN` when configured. Otherwise startup logs one
 warning containing the setup URL and its token fragment, only while uninitialized.
@@ -59,8 +59,13 @@ Authentication failures are limited to five per IP and thirty globally per fifte
 Authenticated clients can list, rename and revoke devices, store or clear their own Web Push
 subscription, and issue single-use ten-minute Android pairing codes. Revocation invalidates
 the token immediately and signals socket closure for the later WebSocket hub.
-`GET /api/me` returns the key check and resolved upload mode; `vapidPublicKey` is null until
-Web Push is implemented. Device DTOs never expose token hashes or subscriptions.
+`GET /api/me` returns the key check, resolved upload mode, and the 65-byte base64url VAPID
+public key. Device DTOs never expose token hashes or subscriptions.
+
+When `meta/vapid.json` is missing, startup generates a P-256 VAPID keypair and persists
+`{ publicKey, privateKey, subject }`. The subject is `VAPID_SUBJECT`, defaulting to `PUBLIC_URL`.
+Later boots reuse the stored record. The private key is never returned by the API and is
+redacted from structured logs. Web Push sending is not implemented yet.
 
 Server bucket access uses the `Storage` contract in `apps/server/src/storage/types.ts`.
 `S3Storage` is used at runtime; tests use `MemoryStorage` or an isolated MinIO instance.
@@ -76,7 +81,7 @@ and uploads use proxy mode. A briefly missing bucket is retried for about ten se
 skip detection. CSP includes the bucket origin only in the resolved direct mode.
 
 Storage and authentication route tests use memory and fake clocks in `check:server`
-(no Docker). Run the MinIO storage, setup/device persistence, and bundled HTTP lifecycle
+(no Docker). Run the MinIO storage, setup/device/VAPID persistence, and bundled HTTP lifecycle
 integration tests with:
 
 ```sh

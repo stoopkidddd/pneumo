@@ -132,3 +132,21 @@ test("redacts detached Web Push keys in nested objects, arrays and child binding
     expect(JSON.parse(line).keys).toEqual({ p256dh: "[Redacted]", auth: "[Redacted]" });
   }
 });
+
+test("redacts VAPID private keys in structured logs and child bindings", () => {
+  const { lines, destination } = captureLogs();
+  const logger = createLogger("info", destination);
+  const privateKey = "fixed-vapid-private-key";
+  logger.info({
+    privateKey,
+    stored: { PRIVATEKEY: privateKey },
+    publicKey: "public-vapid-key",
+  });
+  logger.child({ vapid: { privateKey } }).info("VAPID bindings");
+  expect(lines.join("").includes(privateKey)).toBe(false);
+  const rows = lines.map((line) => JSON.parse(line));
+  expect(rows[0].privateKey).toBe("[Redacted]");
+  expect(rows[0].stored.PRIVATEKEY).toBe("[Redacted]");
+  expect(rows[0].publicKey).toBe("public-vapid-key");
+  expect(rows[1].vapid.privateKey).toBe("[Redacted]");
+});

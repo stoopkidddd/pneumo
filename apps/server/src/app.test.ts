@@ -15,6 +15,7 @@ import { InstanceState } from "./instance/state.js";
 import { createLogger } from "./log.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { UploadMode } from "./storage/upload-mode.js";
+import { loadVapidKeys } from "./webpush/vapid.js";
 
 let webDist: string;
 const html = "<!doctype html><html><body>Pneumo fixture</body></html>";
@@ -63,6 +64,7 @@ async function fixture(
   const clock = { now: () => (now += 5) };
   const instanceState = await InstanceState.load({ storage, config, clock, logger });
   const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+  const vapidKeys = await loadVapidKeys({ storage, config });
   const app = createApp({
     config,
     storage,
@@ -71,6 +73,7 @@ async function fixture(
     clock,
     instanceState,
     devices,
+    vapidPublicKey: vapidKeys.publicKey,
   });
   return { app, instanceState, lines };
 }

@@ -8,6 +8,7 @@ import { InstanceState } from "./instance/state.js";
 import { createLogger } from "./log.js";
 import { S3Storage } from "./storage/s3.js";
 import { resolveUploadMode } from "./storage/upload-mode.js";
+import { loadVapidKeys } from "./webpush/vapid.js";
 
 try {
   const config = loadConfig(process.env);
@@ -20,6 +21,7 @@ try {
     logger,
   });
   const instanceState = await InstanceState.load({ storage, config, clock: systemClock, logger });
+  const vapidKeys = await loadVapidKeys({ storage, config });
   const devices = await DeviceRegistry.load({
     storage,
     clock: systemClock,
@@ -34,6 +36,7 @@ try {
     clock: systemClock,
     instanceState,
     devices,
+    vapidPublicKey: vapidKeys.publicKey,
   });
   const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => {
     logger.info({ port }, "Server listening");
