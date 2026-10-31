@@ -99,11 +99,54 @@ Compose Rules version is a compatibility pin, not a lint incompatibility.
 wired into every host-test variant before resource processing and unit tests;
 they are not committed.
 
+## Pairing and shell
+
+`PneumoApp` owns the lazy `AppContainer`. `PairingViewModel` exposes public screen
+state only; pairing URIs, MK and tokens never enter navigation arguments or saved
+UI state. CameraX with ZXing core scans QR codes without Google Play Services.
+The alternative link field is masked and is not saved across recreation.
+
+`pneumo://pair` intents and pasted/scanned links use the existing strict
+`PairingUri` parser. Confirmation shows the server host before claiming with
+`Build.MODEL`. The repository claims, fetches `/api/me`, compares the derived key
+check in constant time, then saves verified credentials in `SecureStore`.
+Post-claim retries reuse the claimed token rather than claiming a consumed code.
+Application-scoped pending claims can be resumed by a replacement ViewModel;
+a different code first removes the previous unverified device.
+
+`SessionPreferences` stores the server origin, own device id and one-time
+onboarding completion separately from encrypted credentials. Startup requires a
+complete credential/metadata pair, then chooses Onboarding or Home. Notification
+permission is requested on API 33+, followed by the battery-exemption request;
+both may be skipped with warnings. Completion survives sign-out. Home and Devices
+remain placeholders; Settings deletes this device before wiping the local session.
+
+The debug-only network security configuration permits cleartext only to exact
+`10.0.2.2` and `localhost` hosts. Release retains `usesCleartextTraffic="false"`,
+and confirmation warns about non-HTTPS origins outside debug builds.
+
+The direct battery-exemption request required by SPEC §14.3 needs a narrowly
+documented `BatteryLife` lint exception on that helper: this sideloaded,
+no-FCM messaging app deliberately maintains its own connection. No lint baseline
+entry or project-wide rule disable was added.
+
+
 ## Screenshots
 
-The light and dark `@Preview` functions are rendered by `PneumoScreenshotTest`
-using Robolectric API 34 native graphics, a fixed 360×800 dp viewport and xhdpi.
-Goldens live in `app/src/test/screenshots/debug/`.
+`ScreenPreviews` supplies the same fixture data to Compose `@Preview` and
+`PneumoScreensScreenshotTest`, using Robolectric API 34 native graphics, a fixed
+360×800 dp viewport and xhdpi. Goldens live in `app/src/test/screenshots/debug/`.
+
+ENG-253 intentionally replaces the two scaffold goldens with 36 screen goldens.
+Each base name below has both `-light.png` and `-dark.png` variants:
+
+- Pair: `pair-idle`, `pair-camera-denied`, `pair-paste-link`, `pair-invalid-error`.
+- Confirm: `confirm-https`, `confirm-non-https`, `confirm-claiming`,
+  `confirm-retryable-error`, `confirm-error`.
+- Onboarding: `onboarding-notifications`, `onboarding-battery`, `onboarding-done`,
+  `onboarding-warning`.
+- Shell: `main-shell-home`, `main-shell-devices`, `main-shell-settings`,
+  `main-shell-settings-busy`, `main-shell-sign-out-error`.
 
 Only record when intentionally changing the expected UI:
 
@@ -123,6 +166,16 @@ and lint/JUnit reports stay under `build/`.
 with no Google Play Services dependency. Gradle downloads the matching system
 image and creates/boots/stops the device. Hardware virtualization must be
 available. Run only one Android emulator/managed-device suite at a time on this
-Mac. Tests launch `MainActivity` and assert that “Pneumo” is displayed, then exercise
-SecureStore with the real Android Keystore, including reopening the wrapper and
-clearing both credentials.
+Mac. Tests cover initial Pair, valid and invalid deep-link routing, and selected
+Settings-tab restoration after Activity recreation. The SecureStore smoke uses
+the real Android Keystore, including reopening the wrapper and clearing both
+credentials. Turbine/JVM tests additionally cover key mismatch deletion/wipe,
+expired codes, consumed-code retries, replacement ViewModels, sign-out and
+onboarding persistence. QR analyzer tests decode padded luminance frames and
+verify frame ownership on unreadable input.
+
+ATDs disable drawing by default and omit Settings/SystemUI. For a manual screenshot
+smoke, enable drawing with `adb shell setprop debug.hwui.drawing_enabled 1` and
+restart the app; restore it to `0` afterward. Missing battery settings produce an
+explicit warning and allow onboarding to finish. Physical-camera scanning and real
+system-bar appearance still need a regular emulator or phone.
