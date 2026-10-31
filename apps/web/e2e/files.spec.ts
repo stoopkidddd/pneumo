@@ -52,6 +52,7 @@ const test = base.extend<FileTestFixtures>({
     const page = await context.newPage();
     try {
       await completeSetup(page, instance.origin, { deviceName: "File sender" });
+      await waitForFileSender(page);
       await use({ context, page, passphrase: PASSPHRASE, deviceName: "File sender" });
     } finally {
       await context.close();
@@ -82,8 +83,13 @@ function isCreatePush(response: Response): boolean {
     response.ok()
   );
 }
+async function waitForFileSender(page: Page): Promise<void> {
+  await expect(page.getByRole("button", { name: "Attach", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Attach files", { exact: true })).toBeEnabled();
+}
 
 async function attachFile(page: Page, file: FilePayload): Promise<string> {
+  await waitForFileSender(page);
   const created = page.waitForResponse(isCreatePush);
   await page.getByLabel("Attach files", { exact: true }).setInputFiles(file);
   const body = (await (await created).json()) as { id?: unknown };
@@ -139,6 +145,7 @@ function isDownloadContent(route: Route, origin: string): boolean {
 }
 
 async function dispatchDrop(target: Locator, file: FilePayload, type: "dragenter" | "drop") {
+  await waitForFileSender(target.page());
   await target.evaluate(
     (element, payload) => {
       const transfer = new DataTransfer();
@@ -163,6 +170,7 @@ async function dispatchDrop(target: Locator, file: FilePayload, type: "dragenter
 }
 
 async function dispatchPaste(target: Locator, file: FilePayload): Promise<void> {
+  await waitForFileSender(target.page());
   await target.evaluate(
     (element, payload) => {
       const transfer = new DataTransfer();
@@ -187,7 +195,7 @@ async function dispatchPaste(target: Locator, file: FilePayload): Promise<void> 
 
 async function assertAccessibleAndCapture(
   page: Page,
-  name: "file-uploading" | "file-item" | "file-tamper",
+  name: "file-uploading" | "file-item" | "file-tamper" | "file-unavailable",
 ): Promise<void> {
   await mkdir(screenshotDirectory, { recursive: true });
   await page.evaluate(async () => {
@@ -223,6 +231,60 @@ async function assertAccessibleAndCapture(
 for (const uploadMode of ["direct", "proxy"] as const) {
   test.describe(`${uploadMode} encrypted file transfers`, () => {
     test.use({ uploadMode });
+
+    test("file actions stay unavailable until instance limits load, then send normally", async ({
+      browser,
+      instance,
+    }) => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const release = Promise.withResolvers<void>();
+      const requested = Promise.withResolvers<void>();
+      let reservations = 0;
+      page.on("request", (request) => {
+        if (request.method() === "POST" && new URL(request.url()).pathname === "/api/files") {
+          reservations += 1;
+        }
+      });
+      await page.route("**/api/me", async (route) => {
+        requested.resolve();
+        await release.promise;
+        await route.continue();
+      });
+      try {
+        await completeSetup(page, instance.origin, { deviceName: "Waiting for file limits" });
+        await requested.promise;
+        await expect(page.getByRole("button", { name: "Attach", exact: true })).toBeDisabled();
+        await expect(page.getByLabel("Attach files", { exact: true })).toBeDisabled();
+        await page
+          .getByLabel("Attach files", { exact: true })
+          .setInputFiles(filePayload("not-ready.txt", Buffer.from("must not send"), "text/plain"));
+        await page.evaluate(() => {
+          const transfer = new DataTransfer();
+          transfer.items.add(new File(["must not send"], "not-ready.txt", { type: "text/plain" }));
+          window.dispatchEvent(
+            new DragEvent("dragenter", { cancelable: true, dataTransfer: transfer }),
+          );
+          window.dispatchEvent(new DragEvent("drop", { cancelable: true, dataTransfer: transfer }));
+          window.dispatchEvent(
+            new ClipboardEvent("paste", { cancelable: true, clipboardData: transfer }),
+          );
+        });
+        await expect(page.getByText("Drop files to send", { exact: true })).toHaveCount(0);
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        expect(reservations).toBe(0);
+        if (uploadMode === "direct") await assertAccessibleAndCapture(page, "file-unavailable");
+        release.resolve();
+        await waitForFileSender(page);
+        const bytes = Buffer.from("send after limits load");
+        const id = await attachFile(page, filePayload("ready.txt", bytes, "text/plain"));
+        const received = await downloadBytes(push(page, id));
+        expect(received.bytes.equals(bytes)).toBe(true);
+      } finally {
+        release.resolve();
+        await context.close();
+      }
+    });
 
     test("round-trips random files through a second browser", async ({
       browser,

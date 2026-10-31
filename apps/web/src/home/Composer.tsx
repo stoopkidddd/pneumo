@@ -17,6 +17,7 @@ import "./composer.css";
 export interface ComposerProps {
   devices: DeviceDTO[];
   maxEnvelopeBytes: number;
+  filesReady: boolean;
   onSend: (payload: PushPayload, targetDeviceId: string | null) => Promise<void>;
   onFiles: FileActions["sendFiles"];
   offline: boolean;
@@ -24,7 +25,14 @@ export interface ComposerProps {
 
 type SendState = "idle" | "pending" | "success" | "error";
 
-export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }: ComposerProps) {
+export function Composer({
+  devices,
+  maxEnvelopeBytes,
+  filesReady,
+  onSend,
+  onFiles,
+  offline,
+}: ComposerProps) {
   const messageId = useId();
   const titleId = useId();
   const targetId = useId();
@@ -46,6 +54,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
   const tooLarge = maxEnvelopeBytes > 0 && envelopeBytes > maxEnvelopeBytes;
   const hasMessage = message.trim().length > 0;
   const unavailable = offline || sendState === "pending";
+  const filesUnavailable = unavailable || !filesReady;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Measure the DOM after each message edit, including successful draft clearing.
   useLayoutEffect(() => {
@@ -72,12 +81,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
   const attachFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
-      if (unavailable) {
-        setFileError(
-          "Files cannot be sent right now. Reconnect or wait for your message to finish.",
-        );
-        return;
-      }
+      if (filesUnavailable) return;
       try {
         onFiles(files, message, title, targetDeviceId || null);
         setMessage("");
@@ -90,22 +94,23 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
         setFileError(failure instanceof Error ? failure.message : "Could not attach these files.");
       }
     },
-    [unavailable, onFiles, message, title, targetDeviceId],
+    [filesUnavailable, onFiles, message, title, targetDeviceId],
   );
 
-  useEffect(() => {
+  // Synchronize page-level file handlers with the enabled picker in the same commit.
+  useLayoutEffect(() => {
     let depth = 0;
     const isFileDrag = (event: DragEvent) => event.dataTransfer?.types.includes("Files");
     const enter = (event: DragEvent) => {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       depth += 1;
-      setDragging(true);
+      setDragging(!filesUnavailable);
     };
     const over = (event: DragEvent) => {
       if (isFileDrag(event)) {
         event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = unavailable ? "none" : "copy";
+        if (event.dataTransfer) event.dataTransfer.dropEffect = filesUnavailable ? "none" : "copy";
       }
     };
     const leave = (event: DragEvent) => {
@@ -144,7 +149,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
       window.removeEventListener("dragend", end);
       window.removeEventListener("paste", paste);
     };
-  }, [attachFiles, unavailable]);
+  }, [attachFiles, filesUnavailable]);
 
   function markEditing() {
     if (sendState !== "idle") setSendState("idle");
@@ -281,6 +286,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
           aria-label="Attach files"
           multiple
           hidden
+          disabled={filesUnavailable}
           onChange={(event) => {
             attachFiles(Array.from(event.currentTarget.files ?? []));
             event.currentTarget.value = "";
@@ -289,6 +295,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
         <button
           type="button"
           className="composer-attach"
+          disabled={filesUnavailable}
           onClick={() => fileInput.current?.click()}
         >
           Attach
@@ -324,7 +331,7 @@ export function Composer({ devices, maxEnvelopeBytes, onSend, onFiles, offline }
           </button>
         </div>
       </fieldset>
-      {dragging && (
+      {dragging && !filesUnavailable && (
         <div className="file-drop-overlay" role="status">
           Drop files to send
         </div>

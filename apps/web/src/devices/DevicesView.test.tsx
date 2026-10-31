@@ -37,6 +37,7 @@ function renderDevices() {
   const state: HomeState = {
     items: [],
     uploads: [],
+    filesReady: true,
     devices: [phone, browser],
     lastAddedDevice: null,
     maxEnvelopeBytes: 65536,

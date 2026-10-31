@@ -1,8 +1,7 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { readdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -16,6 +15,7 @@ const execute = promisify(execFile);
 const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const serverDirectory = join(workspaceRoot, "apps/server");
 const webDistDirectory = join(workspaceRoot, "apps/web/dist");
+const startupTimeoutMs = 30_000;
 
 export const SETUP_TOKEN = "fixed-e2e-setup-token";
 
@@ -64,91 +64,155 @@ function serverEnvironment(prefix: string, options: WebRuntimeOptions = {}): Nod
     UPLOAD_MODE: options.uploadMode ?? "direct",
     ...(options.maxFileBytes === undefined ? {} : { MAX_FILE_BYTES: String(options.maxFileBytes) }),
     WEB_DIST_DIR: webDistDirectory,
-    LOG_LEVEL: "silent",
+    LOG_LEVEL: "info",
     TRUST_PROXY: "false",
   };
 }
 
-async function darwinListeningPort(pid: number): Promise<number | null> {
-  try {
-    const { stdout } = await execute(
-      "/usr/sbin/lsof",
-      ["-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-Fn"],
-      { timeout: 1_000 },
-    );
-    for (const line of stdout.split("\n")) {
-      const match = /^n.*:(\d+)$/.exec(line);
-      if (match?.[1]) return Number(match[1]);
-    }
-  } catch {
-    // The process may not have opened its listener yet.
-  }
-  return null;
+function isListeningEvent(value: unknown): value is { msg: "Server listening"; port: number } {
+  if (value === null || typeof value !== "object") return false;
+  const event = value as Record<string, unknown>;
+  return (
+    event.msg === "Server listening" &&
+    Number.isInteger(event.port) &&
+    (event.port as number) > 0 &&
+    (event.port as number) <= 65_535
+  );
 }
 
-async function linuxSocketInodes(pid: number): Promise<Set<string>> {
-  const inodes = new Set<string>();
-  const directory = `/proc/${pid}/fd`;
-  for (const descriptor of await readdir(directory)) {
+function waitForListeningPort(child: ChildProcess, deadline: number): Promise<number> {
+  const stdout = child.stdout;
+  if (!stdout) {
+    return Promise.reject(new Error("The web runtime did not expose its startup output"));
+  }
+  if (child.exitCode !== null || child.signalCode !== null) {
+    stdout.resume();
+    return Promise.reject(new Error("The web runtime exited before it started listening"));
+  }
+
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    stdout.resume();
+    return Promise.reject(new Error("Timed out waiting for the web runtime to start listening"));
+  }
+
+  const pending = Promise.withResolvers<number>();
+  const lines = createInterface({ input: stdout, crlfDelay: Infinity });
+  let settled = false;
+
+  const cleanup = (): void => {
+    clearTimeout(timer);
+    lines.off("line", onLine);
+    lines.off("close", onOutputClose);
+    child.off("error", onChildError);
+    child.off("exit", onChildExit);
+    stdout.off("error", onOutputError);
+    lines.close();
+    stdout.resume();
+  };
+  const finish = (error: Error | null, port?: number): void => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    if (error) pending.reject(error);
+    else pending.resolve(port as number);
+  };
+  const onLine = (line: string): void => {
+    let event: unknown;
     try {
-      const target = await readlink(join(directory, descriptor));
-      const match = /^socket:\[(\d+)\]$/.exec(target);
-      if (match?.[1]) inodes.add(match[1]);
+      event = JSON.parse(line);
     } catch {
-      // File descriptors can close while they are inspected.
+      return;
     }
-  }
-  return inodes;
+    if (isListeningEvent(event)) finish(null, event.port);
+  };
+  const onChildError = (): void => {
+    finish(new Error("The web runtime failed to start before it started listening"));
+  };
+  const onChildExit = (): void => {
+    finish(new Error("The web runtime exited before it started listening"));
+  };
+  const onOutputError = (): void => {
+    finish(new Error("The web runtime startup output stream failed"));
+  };
+  const onOutputClose = (): void => {
+    finish(new Error("The web runtime startup output ended before it started listening"));
+  };
+  const timer = setTimeout(() => {
+    finish(new Error("Timed out waiting for the web runtime to start listening"));
+  }, remaining);
+
+  lines.on("line", onLine);
+  lines.once("close", onOutputClose);
+  child.once("error", onChildError);
+  child.once("exit", onChildExit);
+  stdout.once("error", onOutputError);
+  return pending.promise;
 }
 
-async function linuxListeningPort(pid: number): Promise<number | null> {
-  try {
-    const inodes = await linuxSocketInodes(pid);
-    for (const table of ["tcp", "tcp6"]) {
-      const rows = await readFile(`/proc/${pid}/net/${table}`, "utf8");
-      for (const row of rows.trim().split("\n").slice(1)) {
-        const columns = row.trim().split(/\s+/);
-        if (columns[3] !== "0A" || !columns[9] || !inodes.has(columns[9])) continue;
-        const port = Number.parseInt(columns[1]?.split(":")[1] ?? "", 16);
-        if (Number.isInteger(port) && port > 0) return port;
+function waitForHealth(child: ChildProcess, port: number, deadline: number): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.reject(new Error("The web runtime exited before its health check completed"));
+  }
+
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    return Promise.reject(new Error("Timed out waiting for the web runtime health check"));
+  }
+
+  const pending = Promise.withResolvers<void>();
+  const controller = new AbortController();
+  let settled = false;
+
+  const cleanup = (): void => {
+    clearTimeout(timer);
+    child.off("error", onChildError);
+    child.off("exit", onChildExit);
+  };
+  const finish = (error?: Error): void => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    if (error) pending.reject(error);
+    else pending.resolve();
+  };
+  const onChildError = (): void => {
+    controller.abort();
+    finish(new Error("The web runtime failed before its health check completed"));
+  };
+  const onChildExit = (): void => {
+    controller.abort();
+    finish(new Error("The web runtime exited before its health check completed"));
+  };
+  const timer = setTimeout(() => {
+    controller.abort();
+    finish(new Error("Timed out waiting for the web runtime health check"));
+  }, remaining);
+
+  child.once("error", onChildError);
+  child.once("exit", onChildExit);
+
+  void fetch(`http://127.0.0.1:${port}/api/health`, { signal: controller.signal })
+    .then(async (response) => {
+      await response.body?.cancel().catch(() => undefined);
+      if (response.ok) {
+        finish();
+      } else {
+        finish(new Error("The web runtime health check failed"));
       }
-    }
-  } catch {
-    // The process or its proc entries may not exist yet.
-  }
-  return null;
+    })
+    .catch(() => {
+      if (settled) return;
+      finish(new Error("The web runtime health check failed"));
+    });
+  return pending.promise;
 }
 
-async function processListeningPort(pid: number): Promise<number | null> {
-  if (process.platform === "darwin") return darwinListeningPort(pid);
-  if (process.platform === "linux") return linuxListeningPort(pid);
-  throw new Error(`PORT=0 discovery is unsupported on ${process.platform}`);
+async function waitUntilReady(child: ChildProcess, deadline: number): Promise<number> {
+  const port = await waitForListeningPort(child, deadline);
+  await waitForHealth(child, port, deadline);
+  return port;
 }
-
-async function waitUntilReady(child: ChildProcess): Promise<number> {
-  if (!child.pid) throw new Error("The web runtime did not start");
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error("The web runtime exited before it became ready");
-    }
-    const port = await processListeningPort(child.pid);
-    if (port !== null) {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
-          signal: AbortSignal.timeout(1_000),
-        });
-        await response.body?.cancel();
-        if (response.ok) return port;
-      } catch {
-        // The listener can be visible before it accepts requests.
-      }
-    }
-    await delay(100);
-  }
-  throw new Error("The web runtime did not become ready");
-}
-
 export async function stopWebRuntime(child: ChildProcess): Promise<void> {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, "exit");
@@ -183,14 +247,14 @@ export async function startWebRuntime(
   prefix: string,
   options: WebRuntimeOptions = {},
 ): Promise<RunningWebRuntime> {
+  const deadline = Date.now() + startupTimeoutMs;
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: serverDirectory,
     env: serverEnvironment(prefix, options),
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "ignore"],
   });
   try {
-    await once(child, "spawn");
-    const port = await waitUntilReady(child);
+    const port = await waitUntilReady(child, deadline);
     return {
       child,
       origin: `http://127.0.0.1:${port}`,

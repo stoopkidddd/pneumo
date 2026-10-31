@@ -19,6 +19,7 @@ export type FileDownloader = (
   onProgress: (progress: TransferProgress) => void,
 ) => Promise<void>;
 export type FileActions = {
+  filesReady: boolean;
   uploads: UploadItem[];
   sendFiles: (files: File[], body: string, title: string, target: string | null) => void;
   cancelUpload: (id: string) => void;
@@ -48,6 +49,7 @@ export function useFiles({
   const currentUploads = useRef(uploads);
   currentUploads.current = uploads;
   const generation = useRef(0);
+  const filesReady = session !== null && maxFileBytes > 0 && maxEnvelopeBytes > 0;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: A session boundary cancels transfers and removes their local rows.
   useEffect(() => {
@@ -62,7 +64,7 @@ export function useFiles({
   }, [session]);
 
   function sendFiles(files: File[], body: string, title: string, target: string | null) {
-    if (!session || maxFileBytes === 0) throw new Error("Wait for your file limits to load.");
+    if (!filesReady || !session) throw new Error("Wait for your file limits to load.");
     for (const [index, file] of files.entries()) {
       validateFile({
         file,
@@ -128,6 +130,7 @@ export function useFiles({
   }
 
   return {
+    filesReady,
     uploads,
     sendFiles,
     cancelUpload: (id) => {

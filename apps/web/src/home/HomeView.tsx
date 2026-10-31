@@ -79,6 +79,7 @@ export function HomeView({ state }: { state: HomeState }) {
       <Composer
         devices={state.devices}
         maxEnvelopeBytes={state.maxEnvelopeBytes}
+        filesReady={state.filesReady}
         offline={state.offline || state.maxEnvelopeBytes === 0}
         onSend={state.send}
         onFiles={state.sendFiles}

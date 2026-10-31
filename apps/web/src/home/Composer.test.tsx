@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { DeviceDTO } from "@pneumo/protocol";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useLayoutEffect } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { Composer } from "./Composer.js";
 import { buildPushPayload, envelopeByteLength } from "./payload.js";
@@ -31,11 +31,40 @@ function renderComposer(
     <Composer
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={65_536}
+      filesReady
       onSend={onSend}
       onFiles={vi.fn()}
       offline={false}
       {...props}
     />,
+  );
+}
+
+function PasteOnReadyComposer({
+  ready,
+  onFiles,
+}: {
+  ready: boolean;
+  onFiles: ComponentProps<typeof Composer>["onFiles"];
+}) {
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const files = [new File(["content"], "same-commit.txt")];
+    window.dispatchEvent(
+      Object.assign(new Event("paste", { bubbles: true, cancelable: true }), {
+        clipboardData: { files },
+      }),
+    );
+  }, [ready]);
+  return (
+    <Composer
+      devices={[]}
+      maxEnvelopeBytes={65536}
+      filesReady={ready}
+      onSend={vi.fn()}
+      onFiles={onFiles}
+      offline={false}
+    />
   );
 }
 
@@ -127,6 +156,7 @@ test("enforces the exact encrypted envelope boundary before sending", () => {
     <Composer
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={exact - 1}
+      filesReady
       onSend={onSend}
       onFiles={vi.fn()}
       offline={false}
@@ -174,6 +204,7 @@ test("keeps a draft visible but disables the composer while offline", () => {
     <Composer
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={65_536}
+      filesReady
       onSend={vi.fn<() => Promise<void>>().mockResolvedValue(undefined)}
       onFiles={vi.fn()}
       offline
@@ -218,13 +249,75 @@ test("file paste consumes the event but ordinary text paste stays native", () =>
   expect(document.activeElement).toBe(message);
 });
 
-test("drops prevent browser navigation and explain why files cannot send offline", () => {
-  renderComposer(undefined, { offline: true });
-  const drop = new Event("drop", { bubbles: true, cancelable: true });
-  Object.defineProperty(drop, "dataTransfer", {
-    value: { types: ["Files"], files: [new File(["content"], "offline.txt")] },
+test("unavailable file actions retain the draft and do not advertise or send dropped files", () => {
+  const onFiles = vi.fn();
+  const view = renderComposer(undefined, { filesReady: false, onFiles });
+  const message = screen.getByLabelText("Message") as HTMLTextAreaElement;
+  fireEvent.change(message, { target: { value: "Keep this caption while limits load" } });
+  const files = [new File(["content"], "waiting.txt")];
+  expect((screen.getByRole("button", { name: "Attach" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Attach files") as HTMLInputElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Attach files"), { target: { files } });
+  const transfer = { types: ["Files"], files };
+  fireEvent(
+    window,
+    Object.assign(new Event("dragenter", { bubbles: true, cancelable: true }), {
+      dataTransfer: transfer,
+    }),
+  );
+  expect(screen.queryByText("Drop files to send")).toBeNull();
+  const drop = Object.assign(new Event("drop", { bubbles: true, cancelable: true }), {
+    dataTransfer: transfer,
   });
   fireEvent(window, drop);
   expect(drop.defaultPrevented).toBe(true);
-  expect(screen.getByRole("alert").textContent).toContain("Reconnect");
+  const paste = Object.assign(new Event("paste", { bubbles: true, cancelable: true }), {
+    clipboardData: { files },
+  });
+  fireEvent(message, paste);
+  expect(paste.defaultPrevented).toBe(true);
+  expect(onFiles).not.toHaveBeenCalled();
+  expect(message.value).toBe("Keep this caption while limits load");
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  view.rerender(
+    <Composer
+      devices={[]}
+      maxEnvelopeBytes={65536}
+      filesReady
+      onSend={vi.fn()}
+      onFiles={onFiles}
+      offline={false}
+    />,
+  );
+  fireEvent(
+    window,
+    Object.assign(new Event("dragenter", { bubbles: true, cancelable: true }), {
+      dataTransfer: transfer,
+    }),
+  );
+  expect(screen.getByText("Drop files to send")).not.toBeNull();
+  fireEvent(window, drop);
+  expect(message.value).toBe("");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("page-level paste observes newly enabled file actions before passive effects run", () => {
+  const onFiles = vi.fn();
+  const view = render(<PasteOnReadyComposer ready={false} onFiles={onFiles} />);
+  view.rerender(<PasteOnReadyComposer ready onFiles={onFiles} />);
+  expect(onFiles).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("offline file drops prevent navigation without offering a send", () => {
+  const onFiles = vi.fn();
+  renderComposer(undefined, { offline: true, onFiles });
+  const drop = Object.assign(new Event("drop", { bubbles: true, cancelable: true }), {
+    dataTransfer: { types: ["Files"], files: [new File(["content"], "offline.txt")] },
+  });
+  fireEvent(window, drop);
+  expect(drop.defaultPrevented).toBe(true);
+  expect(onFiles).not.toHaveBeenCalled();
+  expect(screen.queryByText("Drop files to send")).toBeNull();
 });
