@@ -6,6 +6,7 @@ coverage/
 
 # Android and IDEs
 .gradle/
+.kotlin/
 .idea/
 *.iml
 apps/android/local.properties

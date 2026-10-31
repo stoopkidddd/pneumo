@@ -1,0 +1,28 @@
+config:
+  validation: true
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+
+Compose:
+  ComposableNaming:
+    active: true
+  ComposableParamOrder:
+    active: true
+  ContentEmitterReturningValues:
+    active: true
+  ContentTrailingLambda:
+    active: true
+  ModifierMissing:
+    active: true
+  ModifierNotUsedAtRoot:
+    active: true
+  ModifierWithoutDefault:
+    active: true
+  MutableParams:
+    active: true
+  MutableStateParam:
+    active: true
+  RememberMissing:
+    active: true

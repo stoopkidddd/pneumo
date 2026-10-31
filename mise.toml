@@ -9,4 +9,19 @@ ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
 
 [tasks.check]
 description = "Run every lane check"
-run = "echo 'no checks yet'"
+depends = ["check:android"]
+
+[tasks."android:setup"]
+description = "Write the ignored Android SDK location"
+dir = "apps/android"
+run = "./scripts/setup.sh"
+
+[tasks."check:android"]
+description = "Check Android formatting, analysis, lint, JVM tests and screenshots"
+dir = "apps/android"
+run = "./gradlew spotlessCheck detekt lint testDebugUnitTest verifyRoborazziDebug"
+
+[tasks."e2e:android"]
+description = "Run the Pixel 6 API 34 managed-device smoke test"
+dir = "apps/android"
+run = "./gradlew pixel6Api34DebugAndroidTest"
