@@ -10,11 +10,15 @@ import { createAuthRoutes } from "./auth/routes.js";
 import type { Config } from "./config.js";
 import type { DeviceRegistry } from "./devices/registry.js";
 import { createDeviceRoutes } from "./devices/routes.js";
+import type { FileRegistry } from "./files/registry.js";
+import { createFileRoutes } from "./files/routes.js";
 import { errorResponse, handleError } from "./http/errors.js";
 import { securityHeaders, staticCacheControl } from "./http/headers.js";
+import type { PushIndex } from "./index-store/index.js";
 import type { InstanceState } from "./instance/state.js";
 import { createRequestLogger } from "./log.js";
 import { createPairingRoutes } from "./pairing/routes.js";
+import { createPushRoutes } from "./pushes/routes.js";
 import type { Storage } from "./storage/types.js";
 import type { UploadMode } from "./storage/upload-mode.js";
 
@@ -32,6 +36,8 @@ export interface AppDependencies {
   logger: Logger;
   instanceState: InstanceState;
   devices: DeviceRegistry;
+  pushes: PushIndex;
+  files: FileRegistry;
   uploadMode: UploadMode;
   vapidPublicKey: string;
 }
@@ -81,6 +87,9 @@ export function createApp(deps: AppDependencies) {
     onError: (c) => errorResponse(c, "payload_too_large"),
   });
   app.use("*", async (c, next) => {
+    if (c.req.method === "PUT" && /^\/api\/files\/[^/]+\/content$/u.test(c.req.path)) {
+      return next();
+    }
     const mediaType = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
     if (mediaType === "application/json" || mediaType?.endsWith("+json")) {
       return limitJson(c, next);
@@ -100,6 +109,8 @@ export function createApp(deps: AppDependencies) {
   app.route("/api", createAuthRoutes(deps));
   app.route("/api", createDeviceRoutes(deps));
   app.route("/api", createPairingRoutes(deps));
+  app.route("/api", createFileRoutes(deps));
+  app.route("/api", createPushRoutes(deps));
   app.all("/api", (c) => errorResponse(c, "not_found"));
   app.all("/api/*", (c) => errorResponse(c, "not_found"));
 

@@ -13,6 +13,8 @@ import { type AppEnv, type Clock, createApp } from "../app.js";
 import { loadConfig } from "../config.js";
 import { DeviceRegistry } from "../devices/registry.js";
 import { EventBus } from "../events.js";
+import { FileRegistry } from "../files/registry.js";
+import { PushIndex } from "../index-store/index.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { MemoryStorage } from "../storage/memory.js";
@@ -59,7 +61,10 @@ async function fixture(options: { trustProxy?: boolean; setupToken?: string } = 
   const storage = new MemoryStorage({ now: clock.now });
   const logger = createLogger("info", destination);
   const instanceState = await InstanceState.load({ storage, config, clock, logger });
-  const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+  const events = new EventBus();
+  const devices = await DeviceRegistry.load({ storage, clock, events });
+  const pushes = await PushIndex.load({ storage, events });
+  const files = new FileRegistry();
   const vapidKeys = await loadVapidKeys({ storage, config });
   const app = createApp({
     config,
@@ -68,6 +73,8 @@ async function fixture(options: { trustProxy?: boolean; setupToken?: string } = 
     logger,
     instanceState,
     devices,
+    pushes,
+    files,
     uploadMode: "proxy",
     vapidPublicKey: vapidKeys.publicKey,
   });

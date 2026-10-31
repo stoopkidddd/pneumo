@@ -44,8 +44,9 @@ mise exec -- node --env-file=.env.local apps/server/dist/index.js
 
 The server serves the built web app and `GET /api/health`. `WEB_DIST_DIR` defaults to
 `apps/web/dist`, resolved relative to the server rather than the current directory. Before
-listening, the server loads `meta/owner.json`, the device registry, and the VAPID keypair
-from the bucket. Health reports the package version and whether the owner record exists.
+listening, the server loads `meta/owner.json`, the device registry, the VAPID keypair,
+and all push records from the bucket (up to 32 concurrent reads). Health reports the
+package version and whether the owner record exists.
 
 First-run setup uses `PNEUMO_SETUP_TOKEN` when configured. Otherwise startup logs one
 warning containing the setup URL and its token fragment, only while uninitialized.
@@ -73,6 +74,8 @@ Server bucket access uses the `Storage` contract in `apps/server/src/storage/typ
 always use unprefixed keys. Listing is UTF-8 lexicographic; `maxKeys` controls page size,
 not the total number of results. Missing reads throw `StorageError` with code `NotFound`;
 missing heads return `null`. Conditional JSON creates use `{ ifNoneMatch: "*" }`.
+Upload stream errors abort the outstanding bucket request and surface as sanitized storage
+errors rather than leaving a request waiting for missing bytes.
 
 With `UPLOAD_MODE=auto`, startup applies and reads bucket CORS. Both calls must succeed
 to select direct uploads; otherwise one warning records the operation and safe error code,
@@ -80,12 +83,45 @@ and uploads use proxy mode. A briefly missing bucket is retried for about ten se
 `minio-init` can finish; other failures fall back immediately. Explicit `direct`/`proxy`
 skip detection. CSP includes the bucket origin only in the resolved direct mode.
 
-Storage and authentication route tests use memory and fake clocks in `check:server`
-(no Docker). Run the MinIO storage, setup/device/VAPID persistence, and bundled HTTP lifecycle
+Authenticated clients reserve encrypted uploads with `POST /api/files`, upload using the
+returned PUT descriptor, and attach the issued file id in `POST /api/pushes`. Direct PUT
+URLs expire after one hour; download URLs expire after ten minutes. Proxy transfers stream
+through authenticated `/api/files/:id/content` routes and reject any body whose byte count
+differs from its reservation. Upload reservations are memory-only: after a server restart,
+an unattached upload must be reserved and uploaded again.
+
+Push creation is idempotent: an identical body for an existing id returns its stored record;
+a different body returns 409. History is newest first by `(createdAt, id)`, with UUID
+`before` cursors and a `limit` of 1–100 (default 50). An unknown valid cursor returns an
+empty page. Deleting a push also deletes its encrypted file. The in-memory index has a
+soft operating limit of about 20,000 pushes; compaction is not implemented. Every thirty
+seconds, reconciliation merges unknown records from the first 100 bucket keys and emits
+`push` events. The later WebSocket hub and Web Push sender consume server events.
+
+An hourly sweep deletes unreferenced file objects older than 24 hours. With
+`RETENTION_DAYS > 0`, a daily sweep deletes older pushes and their files; zero keeps push
+history indefinitely. Reconciliation and sweeps use an injected scheduler in tests and
+unreferenced timers at runtime; shutdown stops the timers.
+
+The built administration CLI uses the same environment configuration as the server:
+
+```sh
+mise exec -- node --env-file=.env.local apps/server/dist/cli.js info
+# Stop the server before resetting its bucket namespace.
+mise exec -- node --env-file=.env.local apps/server/dist/cli.js reset --yes
+```
+
+`info` reports initialization, device/push counts, and the resolved upload mode without
+creating owner or VAPID records. `reset` reports the deleted object count and removes
+everything within `S3_PREFIX`, including metadata; it refuses without `--yes`.
+
+Storage, authentication, push/file routes, index reconciliation, sweeps, and CLI tests use
+memory storage and fake clocks in `check:server` (no Docker). Run MinIO persistence,
+direct/proxy upload-download byte equality, administration CLI, and bundled HTTP lifecycle
 integration tests with:
 
 ```sh
-mise exec -- pnpm --filter @pneumo/server test:e2e
+mise run e2e:server
 ```
 
 The integration runner starts and stops its own uniquely named MinIO container and creates

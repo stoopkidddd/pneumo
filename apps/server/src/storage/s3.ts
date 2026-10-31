@@ -355,6 +355,11 @@ export class S3Storage implements Storage {
   }
 
   async putStream(key: string, stream: Readable, size: number): Promise<void> {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    // The SDK does not propagate a request body's error to the HTTP request.
+    stream.once("error", abort);
+    if (stream.errored !== null) abort();
     try {
       await this.client.send(
         new PutObjectCommand({
@@ -363,9 +368,12 @@ export class S3Storage implements Storage {
           Body: stream,
           ContentLength: size,
         }),
+        { abortSignal: controller.signal },
       );
     } catch (error) {
       throw mapError(error, "putStream", "bucket");
+    } finally {
+      stream.off("error", abort);
     }
   }
 

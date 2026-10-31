@@ -15,6 +15,8 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { type Clock, createApp } from "../app.js";
 import { loadConfig } from "../config.js";
 import { EventBus } from "../events.js";
+import { FileRegistry } from "../files/registry.js";
+import { PushIndex } from "../index-store/index.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { MemoryStorage } from "../storage/memory.js";
@@ -56,6 +58,8 @@ async function initializedFixture() {
   const instanceState = await InstanceState.load({ storage, config, clock, logger });
   const events = new EventBus();
   const devices = await DeviceRegistry.load({ storage, clock, events });
+  const pushes = await PushIndex.load({ storage, events });
+  const files = new FileRegistry();
   const vapidKeys = await loadVapidKeys({ storage, config });
   const app = createApp({
     config,
@@ -64,6 +68,8 @@ async function initializedFixture() {
     logger,
     instanceState,
     devices,
+    pushes,
+    files,
     uploadMode: "proxy",
     vapidPublicKey: vapidKeys.publicKey,
   });

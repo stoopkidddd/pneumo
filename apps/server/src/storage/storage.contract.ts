@@ -170,6 +170,21 @@ export function storageContract(
       expect(await storage.head("wrong-length.bin")).toBeNull();
     });
 
+    test("rejects a failed input stream without completing a partial object", async () => {
+      const storage = await open(`contract/${randomUUID()}`);
+      const source = Readable.from(
+        (async function* () {
+          yield Buffer.from([1, 2, 3]);
+          throw new Error("Fixed fake input failure");
+        })(),
+        { objectMode: false },
+      );
+      await expect(storage.putStream("failed.bin", source, 4)).rejects.toMatchObject({
+        code: "Other",
+      });
+      expect(await storage.head("failed.bin")).toBeNull();
+    });
+
     test("round-trips a five-megabyte stream", async () => {
       const storage = await open(`contract/${randomUUID()}`);
       const payload = Buffer.allocUnsafe(5 * 1024 * 1024);

@@ -3,11 +3,15 @@ import { createApp, systemClock } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { DeviceRegistry } from "./devices/registry.js";
 import { EventBus } from "./events.js";
+import { FileRegistry } from "./files/registry.js";
 import { type ShutdownHook, shutdownServer } from "./http/shutdown.js";
+import { PushIndex, startReconciliation } from "./index-store/index.js";
+import { systemScheduler } from "./index-store/scheduler.js";
 import { InstanceState } from "./instance/state.js";
 import { createLogger } from "./log.js";
 import { S3Storage } from "./storage/s3.js";
 import { resolveUploadMode } from "./storage/upload-mode.js";
+import { startSweeps } from "./sweeps/index.js";
 import { loadVapidKeys } from "./webpush/vapid.js";
 
 try {
@@ -22,12 +26,26 @@ try {
   });
   const instanceState = await InstanceState.load({ storage, config, clock: systemClock, logger });
   const vapidKeys = await loadVapidKeys({ storage, config });
+  const events = new EventBus();
   const devices = await DeviceRegistry.load({
     storage,
     clock: systemClock,
-    events: new EventBus(),
+    events,
   });
-  const shutdownHooks: ShutdownHook[] = [];
+  const pushes = await PushIndex.load({ storage, events });
+  const files = new FileRegistry();
+  const shutdownHooks: ShutdownHook[] = [
+    startReconciliation({ pushes, scheduler: systemScheduler, logger }),
+    startSweeps({
+      storage,
+      clock: systemClock,
+      config,
+      pushes,
+      files,
+      scheduler: systemScheduler,
+      logger,
+    }),
+  ];
   const app = createApp({
     config,
     logger,
@@ -36,6 +54,8 @@ try {
     clock: systemClock,
     instanceState,
     devices,
+    pushes,
+    files,
     vapidPublicKey: vapidKeys.publicKey,
   });
   const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => {

@@ -1,7 +1,9 @@
 import { EventEmitter } from "node:events";
-import type { DeviceDTO } from "@pneumo/protocol";
+import type { DeviceDTO, PushDTO } from "@pneumo/protocol";
 
 export interface ServerEvents {
+  push: { push: PushDTO };
+  push_deleted: { id: string };
   device_added: { device: DeviceDTO };
   device_updated: { device: DeviceDTO };
   device_removed: { id: string };

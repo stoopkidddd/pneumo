@@ -1,10 +1,9 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { b64uEncode, deriveKeys, deriveMasterKey, keyCheck, newKdfParams } from "@pneumo/crypto";
 import {
   AuthParamsResponse,
@@ -22,6 +21,8 @@ import { type Clock, createApp } from "../app.js";
 import { loadConfig } from "../config.js";
 import { DeviceRegistry } from "../devices/registry.js";
 import { EventBus } from "../events.js";
+import { FileRegistry } from "../files/registry.js";
+import { PushIndex } from "../index-store/index.js";
 import { InstanceState } from "../instance/state.js";
 import { createLogger } from "../log.js";
 import { S3Storage } from "../storage/s3.js";
@@ -29,7 +30,6 @@ import { loadVapidKeys } from "../webpush/vapid.js";
 
 const minio = inject("minio");
 const serverDir = new URL("../../", import.meta.url);
-const execute = promisify(execFile);
 const SETUP_TOKEN = "fixed-e2e-setup-token";
 let setupRequest: SetupRequest;
 let webDist: string;
@@ -88,7 +88,6 @@ beforeAll(async () => {
   };
   webDist = await mkdtemp(join(tmpdir(), "pneumo-auth-e2e-"));
   await writeFile(join(webDist, "index.html"), html);
-  await execute("pnpm", ["run", "build"], { cwd: serverDir });
 }, 120_000);
 
 afterAll(async () => {
@@ -104,7 +103,10 @@ test("MinIO persists the owner once and reloads and removes device records", asy
   const clock: Clock = { now: () => now };
   try {
     const instanceState = await InstanceState.load({ storage, config, clock, logger });
-    const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
+    const events = new EventBus();
+    const devices = await DeviceRegistry.load({ storage, clock, events });
+    const pushes = await PushIndex.load({ storage, events });
+    const files = new FileRegistry();
     const vapidKeys = await loadVapidKeys({ storage, config });
     const app = createApp({
       config,
@@ -113,6 +115,8 @@ test("MinIO persists the owner once and reloads and removes device records", asy
       logger,
       instanceState,
       devices,
+      pushes,
+      files,
       uploadMode: "proxy",
       vapidPublicKey: vapidKeys.publicKey,
     });
@@ -176,6 +180,8 @@ test("MinIO persists the owner once and reloads and removes device records", asy
       logger,
       instanceState: reloadedState,
       devices: reloadedDevices,
+      pushes,
+      files,
       uploadMode: "proxy",
       vapidPublicKey: reloadedVapidKeys.publicKey,
     });
