@@ -16,8 +16,9 @@ mise exec -- pnpm install --frozen-lockfile
 ```
 
 The TypeScript workspace contains `@pneumo/protocol`, `@pneumo/crypto`, `@pneumo/server` and
-`@pneumo/web`. The shared packages expose TypeScript source to workspace consumers. Crypto imports
-protocol through a `workspace:*` dependency; both packages are empty until their implementation issues.
+`@pneumo/web`. The shared packages expose TypeScript source to workspace consumers. The server's
+tsup build bundles `@pneumo/*` packages into its ESM entrypoint; npm dependencies stay external so
+plain Node can run the output without a TypeScript loader.
 
 ```sh
 mise run check:protocol  # Biome, TypeScript and Vitest for protocol and crypto
@@ -29,7 +30,26 @@ mise run fmt             # Format TS packages and root config; exclude Android, 
 ```
 
 `mise exec -- pnpm test` runs all four Vitest projects. Start the minimal web app with
-`mise exec -- pnpm --filter @pneumo/web dev`. Build the server with
-`mise exec -- pnpm --filter @pneumo/server build`; its JavaScript output is in `apps/server/dist`.
+`mise exec -- pnpm --filter @pneumo/web dev`.
+
+Copy `.env.example` to `.env.local`, then run `mise exec -- pnpm --filter @pneumo/server dev`
+for the server watcher. For a production-style local run:
+
+```sh
+mise exec -- pnpm --filter @pneumo/web build
+mise exec -- pnpm --filter @pneumo/server build
+mise exec -- node --env-file=.env.local apps/server/dist/index.js
+```
+
+The server serves the built web app and `GET /api/health`. `WEB_DIST_DIR` defaults to
+`apps/web/dist`, resolved relative to the server rather than the current directory. Health reads
+the server package version; `initialized` remains false until setup is implemented. Storage is
+currently an injected interface stub: startup makes no bucket calls and does not wait for
+`minio-init`. Storage startup retries belong to ENG-249.
+
+`check:server` also builds the server and launches the bundle with plain Node, an ephemeral port,
+and a temporary web fixture. It checks health, HTML serving, safe config failures, and SIGTERM
+shutdown. The shutdown hook list in `src/index.ts` is the registration point for the later
+WebSocket hub; hooks receive close code 1012, with a ten-second drain deadline.
 
 License: MIT.
