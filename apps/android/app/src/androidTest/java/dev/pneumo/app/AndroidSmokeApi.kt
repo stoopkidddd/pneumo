@@ -19,9 +19,10 @@ import java.util.Collections
 import kotlin.concurrent.thread
 
 /** Loopback HTTP boundary for the device smoke; requests contain real encrypted envelopes. */
-internal class AndroidSmokeApi : Closeable {
+internal class AndroidSmokeApi(private val failFirstPush: Boolean = false) : Closeable {
     private val server = ServerSocket(0)
     private val pushes = Collections.synchronizedList(mutableListOf<PushDTO>())
+    private val requests = Collections.synchronizedList(mutableListOf<CreatePushRequest>())
     private val device = DeviceDTO(
         name = "Smoke phone",
         platform = Platform.ANDROID,
@@ -41,6 +42,8 @@ internal class AndroidSmokeApi : Closeable {
             }
         }
     }
+
+    fun receivedPushes(): List<CreatePushRequest> = synchronized(requests) { requests.toList() }
 
     private fun respond(socket: Socket) {
         val reader = socket.getInputStream().bufferedReader(Charsets.UTF_8)
@@ -103,6 +106,13 @@ internal class AndroidSmokeApi : Closeable {
 
     private fun create(body: String): Pair<String, String> {
         val request = ProtocolJson.decodeFromString(CreatePushRequest.serializer(), body)
+        val firstRequest = synchronized(requests) {
+            requests.add(request)
+            requests.size == 1
+        }
+        if (failFirstPush && firstRequest) {
+            return "503 Service Unavailable" to """{"error":{"code":"internal","message":"Try later"}}"""
+        }
         val push = PushDTO(
             id = request.id,
             createdAt = CREATED_AT,

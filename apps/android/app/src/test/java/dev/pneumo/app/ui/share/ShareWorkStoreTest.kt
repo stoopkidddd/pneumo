@@ -3,12 +3,17 @@ package dev.pneumo.app.ui.share
 import android.app.Application
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.ListenableWorker.Result
 import dev.pneumo.app.data.SessionCache
 import dev.pneumo.app.data.TextPushes
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.toEntity
+import dev.pneumo.app.net.ApiError
 import dev.pneumo.app.protocol.CreatePushRequest
 import dev.pneumo.app.protocol.PushDTO
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -71,32 +76,85 @@ class ShareWorkStoreTest {
             )
         }
 
-        assertFalse(completed)
+        assertEquals(Result.failure(), completed)
         assertFalse(sendCalled)
         assertFalse(store.exists(key))
     }
 
     @Test
-    fun terminalSendFailureCleansSpoolWithoutRetrying() = runTest {
-        val store = newStore()
-        val key = store.write(StoredShareWork(SESSION_ID, request("terminal failure")))
-        var attempts = 0
+    fun retryableSendFailuresKeepTheEncryptedRequest() = runTest {
+        val failures = listOf(
+            IOException("connection interrupted"),
+            SocketTimeoutException("timed out"),
+            UnknownHostException("DNS unavailable"),
+            ApiError("rate_limited", 429, "Try later"),
+            ApiError("internal", 500, "Try later"),
+            ApiError("internal", 503, "Try later")
+        )
+        for (failure in failures) {
+            val store = newStore()
+            val request = request("retry after a transient failure")
+            val key = store.write(StoredShareWork(SESSION_ID, request))
+            val result = runStoredShareWork(key, store) {
+                ShareSendSession(
+                    deviceId = SESSION_ID,
+                    generation = 0L,
+                    cache = SessionCache(),
+                    create = { throw failure },
+                    store = { error("Failed pushes must not be stored") }
+                )
+            }
 
-        val completed = runStoredShareWork(key, store) {
-            ShareSendSession(
-                deviceId = SESSION_ID,
-                generation = 0L,
-                cache = SessionCache(),
-                create = {
-                    attempts += 1
-                    error("network failure")
-                },
-                store = { error("Failed pushes must not be stored") }
-            )
+            assertEquals(Result.retry(), result)
+            assertTrue(store.exists(key))
+            assertEquals(request, store.read(key).request)
+        }
+    }
+
+    @Test
+    fun terminalApiFailuresDiscardTheEncryptedRequest() = runTest {
+        val failures = listOf(
+            ApiError.Unauthorized(),
+            ApiError("bad_request", 400, "Invalid request"),
+            ApiError("forbidden", 403, "Device removed"),
+            ApiError("not_found", 404, "Not found"),
+            ApiError("conflict", 409, "Conflicting request"),
+            ApiError("payload_too_large", 413, "Too large"),
+            ApiError("client_error", 499, "Client error")
+        )
+        for (failure in failures) {
+            val store = newStore()
+            val key = store.write(StoredShareWork(SESSION_ID, request("terminal failure")))
+            val result = runStoredShareWork(key, store) {
+                ShareSendSession(
+                    deviceId = SESSION_ID,
+                    generation = 0L,
+                    cache = SessionCache(),
+                    create = { throw failure },
+                    store = { error("Failed pushes must not be stored") }
+                )
+            }
+
+            assertEquals(Result.failure(), result)
+            assertFalse(store.exists(key))
+        }
+    }
+
+    @Test
+    fun undecodableSpoolIsTerminalRatherThanRetryable() = runTest {
+        val directory = temporary.newFolder()
+        val store = ShareWorkStore(directory)
+        val key = store.write(StoredShareWork(SESSION_ID, request("invalidated spool")))
+        directory.listFiles().orEmpty().single().writeText("{")
+        var openedSession = false
+
+        val result = runStoredShareWork(key, store) {
+            openedSession = true
+            null
         }
 
-        assertFalse(completed)
-        assertEquals(1, attempts)
+        assertEquals(Result.failure(), result)
+        assertFalse(openedSession)
         assertFalse(store.exists(key))
     }
 
@@ -120,7 +178,7 @@ class ShareWorkStoreTest {
             )
         }
 
-        assertFalse(completed)
+        assertEquals(Result.failure(), completed)
         assertEquals(1, storeAttempts)
         assertFalse(store.exists(key))
     }
@@ -186,7 +244,7 @@ class ShareWorkStoreTest {
             }
             createResponse.complete(response(oldRequest))
 
-            assertFalse(oldWriter.await())
+            assertEquals(Result.failure(), oldWriter.await())
             assertFalse(store.exists(key))
             val persisted = database.pushes().list()
             assertEquals(listOf(newRequest.id), persisted.map { push -> push.id })

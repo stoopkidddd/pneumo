@@ -3,6 +3,7 @@ package dev.pneumo.app.ui.share
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker.Result
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
@@ -12,8 +13,10 @@ import androidx.work.workDataOf
 import dev.pneumo.app.PneumoApp
 import dev.pneumo.app.data.SessionCache
 import dev.pneumo.app.data.db.toEntity
+import dev.pneumo.app.net.ApiError
 import dev.pneumo.app.protocol.CreatePushRequest
 import dev.pneumo.app.protocol.PushDTO
+import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -31,41 +34,58 @@ internal suspend fun runStoredShareWork(
     key: String,
     store: ShareWorkStore,
     openSession: suspend () -> ShareSendSession?
-): Boolean {
+): Result {
     var terminal = true
     return try {
         val work = store.read(key)
         val session = openSession()
         if (session != null && session.deviceId == work.sessionDeviceId) {
-            val created = session.create(work.request)
-            session.cache.withPushes(session.generation) {
-                session.store(created)
+            if (sendStoredShare(session, work.request)) {
+                Result.success()
+            } else {
+                terminal = false
+                Result.retry()
             }
-            true
         } else {
-            false
+            Result.failure()
         }
     } catch (cancelled: CancellationException) {
         terminal = false
         throw cancelled
     } catch (_: Exception) {
-        false
+        Result.failure()
     } finally {
         if (terminal) store.delete(key)
     }
 }
 
+private suspend fun sendStoredShare(session: ShareSendSession, request: CreatePushRequest): Boolean = try {
+    val created = session.create(request)
+    session.cache.withPushes(session.generation) {
+        session.store(created)
+    }
+    true
+} catch (failure: ApiError) {
+    if (failure.status >= HTTP_SERVER_ERROR || failure.status == HTTP_RATE_LIMITED) {
+        false
+    } else {
+        throw failure
+    }
+} catch (_: IOException) {
+    false
+}
+
 class SharePushWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val key = inputData.getString(INPUT_SPOOL_KEY)
-        val completed = if (key == null) {
-            false
+        val result = if (key == null) {
+            Result.failure()
         } else {
             val store = ShareWorkStore.create(applicationContext)
             val app = applicationContext as? PneumoApp
             if (app == null) {
                 store.delete(key)
-                false
+                Result.failure()
             } else {
                 runStoredShareWork(key, store) {
                     app.container.openSession()?.let { session ->
@@ -82,13 +102,16 @@ class SharePushWorker(appContext: Context, params: WorkerParameters) : Coroutine
                 }
             }
         }
-        return if (completed) Result.success() else Result.failure()
+        return result
     }
 
     companion object {
         internal const val INPUT_SPOOL_KEY = "spool_key"
     }
 }
+
+private const val HTTP_RATE_LIMITED = 429
+private const val HTTP_SERVER_ERROR = 500
 
 internal object ShareWorkScheduler {
     fun enqueue(context: Context, sessionDeviceId: String, request: CreatePushRequest) {

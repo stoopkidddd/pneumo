@@ -216,13 +216,14 @@ settings" when notifications are off.
 
 ## Home, sharing, devices, and settings
 
-Home collects the newest-first Room history through `PushRepository`; decrypted
-payloads stay in memory. HTTP pages extend the encrypted cache without changing
-the connection's sync cursor. Notes, links, and file metadata have distinct rows;
-file transfer actions remain in the files lane. Delete hides a row immediately,
-offers Undo for five seconds, then calls the API; a failure restores the row.
-The composer retains failed drafts, detects links with the protocol HTTP(S) rule,
-and offers all devices or an individual online/offline target.
+Home collects the newest-first Room history through `PushRepository`. Envelope
+parsing, AES-GCM decryption, and payload decoding run on `Dispatchers.Default`,
+not the Main collector; decrypted payloads stay in memory. HTTP pages extend the
+encrypted cache without changing the connection's sync cursor. Notes, links, and
+file metadata have distinct rows; file transfer actions remain in the files lane.
+Delete hides a row immediately, offers Undo for five seconds, then calls the API;
+a failure restores the row. The composer retains failed drafts, detects links with
+the protocol HTTP(S) rule, and offers all devices or an individual online/offline target.
 
 The exported `ShareActivity` accepts only `ACTION_SEND` with `text/plain`.
 `EXTRA_TEXT` supplies the body and `EXTRA_SUBJECT` the optional title. A single
@@ -234,9 +235,15 @@ WorkManager is pinned to `2.12.0`. Sending encrypts before enqueueing, confirms 
 enqueue within a 750 ms bound, and finishes the activity. WorkManager stores only
 a spool-file identifier in its 10 KB `Data`; the private, no-backup spool contains
 the encrypted server request and session device id, never plaintext or credentials.
-The worker survives the activity finishing, writes the returned encrypted push to
-Room, and removes terminal spool files. Session generation checks prevent late
-responses from writing into a signed-out or newly paired cache.
+The worker survives the activity finishing and writes the returned encrypted push
+to Room. I/O failures during sending, including timeouts and DNS failures, and
+HTTP 429 or 5xx responses retain the spool and return `Result.retry()`. There is no
+application retry-attempt cap: WorkManager applies its backoff rather than silently
+discarding shares during an outage. Retries reuse the stored id and encrypted body,
+so the idempotent `POST /api/pushes` contract prevents duplicate creation.
+Success and terminal failures delete the spool. Other 4xx responses, an unpaired
+or mismatched session, and undecodable work are terminal. Session generation
+checks prevent late responses from writing into a signed-out or newly paired cache.
 
 `SessionCache` serializes each bounded HTTP cache operation with matching live
 frames and session teardown. History/device reads and their writes share the same
@@ -317,6 +324,11 @@ Keystore, including reopening the wrapper and clearing both credentials.
 text-share intent, waits for the sheet to finish, and verifies the decrypted push
 in Home. Its isolated loopback HTTP server receives real encrypted envelopes;
 no external server, credentials, or new test dependencies are required.
+A second share case returns HTTP 503 for the first POST. It verifies the real
+WorkManager retry after the sheet finishes and checks that the identical encrypted
+request reaches Home once. JVM tests also cover retryable versus terminal errors
+and collect history on Main while checking that actual cipher key access occurs
+on a different thread.
 Turbine/JVM tests additionally cover key mismatch deletion/wipe,
 expired codes, consumed-code retries, replacement ViewModels, sign-out and
 onboarding persistence. QR analyzer tests decode padded luminance frames and

@@ -16,6 +16,7 @@ import dev.pneumo.app.data.SessionPreferences
 import dev.pneumo.app.protocol.NotePayload
 import dev.pneumo.app.service.ConnectionService
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -27,12 +28,17 @@ class HomeShareSmokeTest {
     val compose = createEmptyComposeRule()
 
     @Test
-    fun destinationsAndShareSurviveActivityFinishing() {
+    fun destinationsAndShareSurviveActivityFinishing() = verifyShare(failFirstPush = false)
+
+    @Test
+    fun transientFailureRetriesAfterShareActivityFinishes() = verifyShare(failFirstPush = true)
+
+    private fun verifyShare(failFirstPush: Boolean) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val container = (context.applicationContext as PneumoApp).container
         val credentials = SecureStore.create(context)
         val preferences = SessionPreferences.create(context)
-        AndroidSmokeApi().use { api ->
+        AndroidSmokeApi(failFirstPush).use { api ->
             try {
                 runBlocking {
                     container.database.wipe()
@@ -63,15 +69,11 @@ class HomeShareSmokeTest {
                     compose.waitUntil(TIMEOUT_MS) { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
                 }
                 ActivityScenario.launch(MainActivity::class.java).use {
-                    compose.waitUntil(TIMEOUT_MS) {
+                    compose.waitUntil(if (failFirstPush) RETRY_TIMEOUT_MS else TIMEOUT_MS) {
                         compose.onAllNodesWithText(SHARED_TEXT).fetchSemanticsNodes().isNotEmpty()
                     }
                     compose.onNodeWithText(SHARED_TEXT).assertIsDisplayed()
-                    runBlocking {
-                        val session = requireNotNull(container.openSession())
-                        val payload = session.pushes.list().single().payload
-                        assertTrue(payload is NotePayload && payload.body == SHARED_TEXT)
-                    }
+                    runBlocking { verifyStoredPush(container, api, failFirstPush) }
                 }
             } finally {
                 ConnectionService.stop(context)
@@ -80,6 +82,17 @@ class HomeShareSmokeTest {
                 }
             }
         }
+    }
+
+    private suspend fun verifyStoredPush(container: AppContainer, api: AndroidSmokeApi, retried: Boolean) {
+        val session = requireNotNull(container.openSession())
+        val push = session.pushes.list().single()
+        val payload = push.payload
+        assertTrue(payload is NotePayload && payload.body == SHARED_TEXT)
+        val requests = api.receivedPushes()
+        assertEquals(if (retried) 2 else 1, requests.size)
+        assertEquals(push.push.id, requests.first().id)
+        if (retried) assertEquals(requests.first(), requests.last())
     }
 
     private suspend fun clearSmokeSession(
@@ -100,6 +113,7 @@ class HomeShareSmokeTest {
     private companion object {
         const val KEY_BYTES = 32
         const val TIMEOUT_MS = 15_000L
+        const val RETRY_TIMEOUT_MS = 60_000L
         const val SHARED_TEXT = "Managed share reached Home"
     }
 }

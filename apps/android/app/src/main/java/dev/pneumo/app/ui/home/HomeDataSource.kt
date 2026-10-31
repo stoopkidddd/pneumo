@@ -9,7 +9,9 @@ import dev.pneumo.app.protocol.DeviceDTO
 import dev.pneumo.app.protocol.ListPushesResponse
 import dev.pneumo.app.protocol.PushDTO
 import dev.pneumo.app.sync.DecryptedPush
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 internal interface HomeDataSource {
@@ -30,7 +32,7 @@ internal interface HomeDataSource {
 
 internal class RoomHomeDataSource(private val session: AppSession, private val database: PneumoDatabase) :
     HomeDataSource {
-    override val history: Flow<List<DecryptedPush>> = session.pushes.observeAll()
+    override val history: Flow<List<DecryptedPush>> = session.pushes.observeAll().flowOn(Dispatchers.Default)
     override val devices: Flow<List<DeviceDTO>> = database.invalidationTracker
         .createFlow("devices", emitInitialState = true)
         .map { cachedDevices() }
