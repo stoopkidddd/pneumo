@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="devices_title">Devices</string>
+    <string name="devices_body">Your paired devices. Send to all of them, or choose one on Home.</string>
+    <string name="devices_loading">Loading devices…</string>
+    <string name="devices_empty_title">No paired devices</string>
+    <string name="devices_empty_body">New devices appear here after they pair or sign in.</string>
+    <string name="devices_try_again">Try again</string>
+    <string name="devices_this_device">This device</string>
+    <string name="devices_platform_android">Android</string>
+    <string name="devices_platform_web">Browser</string>
+    <string name="devices_platform_desktop">Desktop</string>
+    <string name="devices_platform_cli">Command line</string>
+    <string name="devices_online">Online</string>
+    <string name="devices_offline">Offline</string>
+    <string name="devices_last_seen_now">Last seen just now</string>
+    <plurals name="devices_last_seen_minutes">
+        <item quantity="one">Last seen %d minute ago</item>
+        <item quantity="other">Last seen %d minutes ago</item>
+    </plurals>
+    <plurals name="devices_last_seen_hours">
+        <item quantity="one">Last seen %d hour ago</item>
+        <item quantity="other">Last seen %d hours ago</item>
+    </plurals>
+    <plurals name="devices_last_seen_days">
+        <item quantity="one">Last seen %d day ago</item>
+        <item quantity="other">Last seen %d days ago</item>
+    </plurals>
+    <string name="devices_last_seen_date">Last seen %1$s</string>
+    <string name="devices_rename">Rename</string>
+    <string name="devices_remove">Remove</string>
+    <string name="devices_open_sign_out">Sign out in Settings</string>
+    <string name="devices_name_label">Device name</string>
+    <string name="devices_save_name">Save name</string>
+    <string name="devices_saving_name">Saving name…</string>
+    <string name="devices_cancel">Cancel</string>
+    <string name="devices_remove_confirmation">Remove %1$s? It will need to pair or sign in again.</string>
+    <string name="devices_remove_device">Remove device</string>
+    <string name="devices_removing">Removing device…</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_permissions_heading">Delivery</string>
+    <string name="settings_notifications_label">Notifications</string>
+    <string name="settings_battery_label">Battery optimization</string>
+    <string name="settings_enabled">Enabled</string>
+    <string name="settings_denied">Denied</string>
+    <string name="settings_battery_exempt">Exempt</string>
+    <string name="settings_battery_optimized">Optimization on</string>
+    <string name="settings_battery_warning">Android may delay pushes while battery optimization is on.</string>
+    <string name="settings_request_battery_exemption">Allow background connection</string>
+    <string name="settings_about_heading">About</string>
+    <string name="settings_server_label">Server</string>
+    <string name="settings_version_label">App version</string>
+    <string name="settings_sign_out">Sign out</string>
+    <string name="settings_signing_out">Signing out…</string>
+</resources>

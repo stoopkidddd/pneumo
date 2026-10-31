@@ -1,5 +1,6 @@
 package dev.pneumo.app.sync
 
+import dev.pneumo.app.data.SessionCache
 import dev.pneumo.app.data.SyncCursorStore
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.PushEntity
@@ -29,13 +30,27 @@ class SyncEngine(
     private val pushApi: PushApi,
     private val cursor: SyncCursorStore,
     private val ownDeviceId: String,
-    private val sink: PushSink
+    private val sink: PushSink,
+    private val cache: SessionCache
 ) {
+    private val generation = cache.generation()
     private val pushes = database.pushes()
     private val devices = database.devices()
     private val syncState = database.syncState()
 
     suspend fun apply(frame: ServerFrame) {
+        when (frame) {
+            is DeviceAddedFrame, is DeviceUpdatedFrame, is DeviceRemovedFrame ->
+                cache.withDevices(generation) { applyFrame(frame) }
+
+            is PushFrame, is PushDeletedFrame, is ResyncFrame, is ReadyFrame ->
+                cache.withPushes(generation) { applyFrame(frame) }
+
+            is ReplayDoneFrame, is PingFrame -> Unit
+        }
+    }
+
+    private suspend fun applyFrame(frame: ServerFrame) {
         when (frame) {
             is PushFrame -> applyPush(frame.push)
 
@@ -81,7 +96,12 @@ class SyncEngine(
         do {
             val page = pushApi.listPushes(before = before, limit = RESYNC_PAGE_SIZE)
             var overlapped = false
-            val existing = pushes.existingIds(page.pushes.map(PushDTO::id)).toHashSet()
+            // History browsing may cache unapplied rows ahead of the durable sync position.
+            val existing = if (lowerBound == null) {
+                pushes.existingIds(page.pushes.map(PushDTO::id)).toHashSet()
+            } else {
+                emptySet()
+            }
             for (push in page.pushes) {
                 if (push.id in existing || (lowerBound != null && !push.isAfter(lowerBound))) {
                     overlapped = true

@@ -122,9 +122,10 @@ intents. Consumed action/data are replaced while preserving launch identity.
 onboarding completion separately from encrypted credentials. Startup requires a
 complete credential/metadata pair, then chooses Onboarding or Home. Notification
 permission is requested on API 33+, followed by the battery-exemption request;
-both may be skipped with warnings. Completion survives sign-out. Home and Devices
-remain placeholders; Settings deletes this device, stops the connection, and wipes
-credentials, session metadata, Room history, and the sync cursor.
+both may be skipped with warnings. Completion survives sign-out. Home shows encrypted
+history and a text composer; Devices manages paired devices. Settings deletes this
+device, stops the connection, and wipes credentials, session metadata, Room history,
+and the sync cursor.
 
 `ScreenFrame` owns safe-drawing padding inside its background Surface. The main
 shell consumes Scaffold padding before applying any remaining safe-drawing insets,
@@ -166,9 +167,10 @@ and joins the connection before wiping Room and DataStore.
 `SyncEngine` applies frames serially, advances `lastPushId` after each applied
 push, and deduplicates replay/live delivery by id. With a null cursor, `ready`
 runs HTTP catch-up before queued live frames can move the lower bound past an
-offline gap. Both this path and explicit resync page newest-first until Room
-overlap or a push at/before the stored `(createdAt, id)` position, then apply the
-missing pushes oldest-first. The initial position uses the server pairing
+offline gap. Both this path and explicit resync page newest-first until a push
+at/before the durable `(createdAt, id)` position, then apply missing pushes
+oldest-first. With no durable position, an existing Room row is the fallback
+overlap boundary. The initial position uses the server pairing
 timestamp and an empty id, including pushes in that same millisecond without
 fetching earlier history. Deleting the cursor push does not remove this bound.
 Cursor ordering uses server time, not sender-generated UUID order. Heartbeats run
@@ -206,11 +208,48 @@ Download sends `dev.pneumo.app.notify.DOWNLOAD` to `DownloadRequestedReceiver`
 with the `pushId` extra. Until the files issue replaces that handler, it logs only
 the push id and shows "Coming soon". Body taps pass `pushId` through MainActivity,
 navigation and `ShellUiState`, selecting Home without replaying the tab selection
-on recreation. The Home issue will consume this target to scroll the history.
+on recreation. Home fetches a missing target, scrolls to it, and marks it selected.
 
 Notification permission denial skips delivery without decrypting. Settings
 refreshes app and channel permission state on resume and offers "Open notification
 settings" when notifications are off.
+
+## Home, sharing, devices, and settings
+
+Home collects the newest-first Room history through `PushRepository`; decrypted
+payloads stay in memory. HTTP pages extend the encrypted cache without changing
+the connection's sync cursor. Notes, links, and file metadata have distinct rows;
+file transfer actions remain in the files lane. Delete hides a row immediately,
+offers Undo for five seconds, then calls the API; a failure restores the row.
+The composer retains failed drafts, detects links with the protocol HTTP(S) rule,
+and offers all devices or an individual online/offline target.
+
+The exported `ShareActivity` accepts only `ACTION_SEND` with `text/plain`.
+`EXTRA_TEXT` supplies the body and `EXTRA_SUBJECT` the optional title. A single
+trimmed URL becomes a link; multiline prose stays a note. An optional message
+becomes the link body or is appended to the note. When unpaired, the sheet opens
+the existing pairing flow.
+
+WorkManager is pinned to `2.12.0`. Sending encrypts before enqueueing, confirms the
+enqueue within a 750 ms bound, and finishes the activity. WorkManager stores only
+a spool-file identifier in its 10 KB `Data`; the private, no-backup spool contains
+the encrypted server request and session device id, never plaintext or credentials.
+The worker survives the activity finishing, writes the returned encrypted push to
+Room, and removes terminal spool files. Session generation checks prevent late
+responses from writing into a signed-out or newly paired cache.
+
+`SessionCache` serializes each bounded HTTP cache operation with matching live
+frames and session teardown. History/device reads and their writes share the same
+domain lock, so a queued deletion or device update applies after an older HTTP
+snapshot rather than being overwritten by it. Push and device domains remain
+independent. The durable sync position, not a row inserted by history browsing,
+defines catch-up's lower bound.
+
+Devices supports rename, inline removal confirmation for other devices, and a
+Settings shortcut for this device's sign-out. Settings reuses the existing live
+connection component and notification recovery, refreshes notification and battery
+state on resume, and shows the server authority and app version.
+
 
 ## Screenshots
 
@@ -242,6 +281,16 @@ status row.
 ENG-263 adds the light/dark `main-shell-settings-notifications-off` goldens, shared
 with the notifications-off Compose preview. Existing screen goldens are unchanged.
 
+ENG-264 adds 66 light/dark goldens for Home, composer, Share, Devices, and all four
+notification/battery permission combinations in Settings. Separate note, link, and
+file fixtures keep every row type visible. Existing shell goldens were deliberately
+re-recorded for the real destinations: `main-shell-home`, `main-shell-devices`,
+`main-shell-settings`, `main-shell-settings-busy`,
+`main-shell-settings-notifications-off`, and `main-shell-sign-out-error`, each with
+`-light.png` and `-dark.png`. Pair, Confirm, Onboarding, and connection goldens are
+unchanged.
+
+
 Only record when intentionally changing the expected UI:
 
 ```sh
@@ -264,6 +313,10 @@ Mac. Tests cover initial Pair, valid and invalid deep-link routing, selected
 Settings-tab restoration, cold/warm notification navigation, and the denied
 notification permission state. The SecureStore smoke uses the real Android
 Keystore, including reopening the wrapper and clearing both credentials.
+`HomeShareSmokeTest` also visits every bottom-navigation destination, launches a
+text-share intent, waits for the sheet to finish, and verifies the decrypted push
+in Home. Its isolated loopback HTTP server receives real encrypted envelopes;
+no external server, credentials, or new test dependencies are required.
 Turbine/JVM tests additionally cover key mismatch deletion/wipe,
 expired codes, consumed-code retries, replacement ViewModels, sign-out and
 onboarding persistence. QR analyzer tests decode padded luminance frames and
@@ -295,6 +348,16 @@ Room held all 12 test pushes (two before Doze, ten during), each marked notified
 The emulator state, isolated server/MinIO, and throwaway harness were cleaned up.
 Android 14 elevated the active foreground-service channel to LOW (`2`) from its
 requested MIN (`1`); its original importance remained MIN and sound stayed off.
+
+ENG-264's isolated regular API 34 Google APIs emulator acceptance paired by deep
+link, sent `https://example.com` through the exported share sheet, and observed a
+link in `dev-client listen` after 631 ms on the final APK. Home displayed the link;
+a multiline composer note and live delete/undo were also exercised. Light/dark and
+font-scale 1.3 captures are saved under ignored `apps/android/build/acceptance/`,
+including `share-url-final.png`, `home-link-final.png`, and
+`home-note-link-dark-large-text.png`. The emulator, isolated random-port server,
+MinIO, temporary sessions, and temporary AVD were stopped or removed afterwards.
+
 
 ATDs disable drawing by default and omit Settings/SystemUI. For a manual screenshot
 smoke, enable drawing with `adb shell setprop debug.hwui.drawing_enabled 1` and

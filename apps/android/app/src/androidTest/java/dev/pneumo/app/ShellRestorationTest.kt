@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.core.net.toUri
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,9 +31,9 @@ class ShellRestorationTest {
     fun settingsSurvivesActivityRecreation() = withPairedSession {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             compose.onNodeWithText("Settings").performClick()
-            compose.onNodeWithText("Sign out").assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
             scenario.recreate()
-            compose.onNodeWithText("Sign out").assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
         }
     }
 
@@ -68,7 +69,7 @@ class ShellRestorationTest {
     fun warmNotificationIntentSelectsHomeFromSettings() = withPairedSession {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             compose.onNodeWithText("Settings").performClick()
-            compose.onNodeWithText("Sign out").assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
             scenario.onActivity { activity ->
                 activity.startActivity(
                     Intent(activity, MainActivity::class.java)
@@ -76,7 +77,7 @@ class ShellRestorationTest {
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 )
             }
-            compose.onNodeWithText("Nothing here yet").assertIsDisplayed()
+            compose.onNodeWithText("Message").assertIsDisplayed()
         }
     }
 
@@ -87,11 +88,11 @@ class ShellRestorationTest {
                 .setData("pneumo://notification/body/$PUSH_ID".toUri())
                 .putExtra(MainActivity.EXTRA_PUSH_ID, PUSH_ID)
         ActivityScenario.launch<MainActivity>(notificationIntent).use { scenario ->
-            compose.onNodeWithText("Nothing here yet").assertIsDisplayed()
+            compose.onNodeWithText("Message").assertIsDisplayed()
             compose.onNodeWithText("Settings").performClick()
-            compose.onNodeWithText("Sign out").assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
             scenario.recreate()
-            compose.onNodeWithText("Sign out").assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
         }
     }
 

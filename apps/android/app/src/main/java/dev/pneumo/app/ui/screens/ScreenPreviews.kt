@@ -1,11 +1,18 @@
 package dev.pneumo.app.ui.screens
 
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import dev.pneumo.app.net.ws.ConnectionState
+import dev.pneumo.app.ui.devices.DevicesPreviewCase
+import dev.pneumo.app.ui.devices.DevicesPreviewContent
+import dev.pneumo.app.ui.home.HomePreviewCase
+import dev.pneumo.app.ui.home.HomePreviewContent
+import dev.pneumo.app.ui.settings.SettingsPreviewCase
+import dev.pneumo.app.ui.settings.SettingsPreviewContent
 import dev.pneumo.app.ui.theme.PneumoTheme
 
 class ScreenPreviewProvider : PreviewParameterProvider<ScreenPreviewCase> {
@@ -141,10 +148,30 @@ private fun ShellPreview(fixture: ScreenPreviewCase) {
             } else {
                 null
             },
-            connection = ConnectionState.Connected,
-            notificationsEnabled = fixture != ScreenPreviewCase.MainShellSettingsNotificationsOff
+            connection = ConnectionState.Connected
         ),
         onTab = {},
-        onSignOut = {}
+        content = { destination, contentModifier ->
+            Box(contentModifier) {
+                when (destination) {
+                    MainTab.Home -> HomePreviewContent(HomePreviewCase.Empty)
+
+                    MainTab.Devices -> DevicesPreviewContent(DevicesPreviewCase.List)
+
+                    MainTab.Settings -> SettingsPreviewContent(
+                        when (fixture) {
+                            ScreenPreviewCase.MainShellSettingsBusy -> SettingsPreviewCase.Busy
+
+                            ScreenPreviewCase.MainShellSignOutError -> SettingsPreviewCase.Error
+
+                            ScreenPreviewCase.MainShellSettingsNotificationsOff ->
+                                SettingsPreviewCase.NotificationsOffBatteryExempt
+
+                            else -> SettingsPreviewCase.NotificationsOnBatteryExempt
+                        }
+                    )
+                }
+            }
+        }
     )
 }

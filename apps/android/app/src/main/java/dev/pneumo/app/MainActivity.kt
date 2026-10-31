@@ -1,6 +1,5 @@
 package dev.pneumo.app
 
-import android.app.NotificationManager
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,7 +13,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.pneumo.app.notify.PushNotificationGroup
-import dev.pneumo.app.notify.PushNotifier
 import dev.pneumo.app.ui.NotificationUiState
 import dev.pneumo.app.ui.PairingViewModel
 import dev.pneumo.app.ui.PneumoNavHost
@@ -32,14 +30,12 @@ class MainActivity : ComponentActivity() {
 
     private var notificationPushId by mutableStateOf<String?>(null)
     private var notificationNavigationId by mutableLongStateOf(0L)
-    private var notificationsEnabled by mutableStateOf(true)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         notificationPushId = savedInstanceState?.getString(STATE_PUSH_ID)
         notificationNavigationId = savedInstanceState?.getLong(STATE_NAVIGATION_ID) ?: 0L
-        notificationsEnabled = arePushNotificationsEnabled()
         if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
             handleIncomingIntent(intent)
         } else {
@@ -50,19 +46,14 @@ class MainActivity : ComponentActivity() {
                 PneumoNavHost(
                     viewModel = pairingViewModel,
                     connectionState = (application as PneumoApp).container.connectionState,
+                    container = (application as PneumoApp).container,
                     notifications = NotificationUiState(
                         notificationPushId,
-                        notificationNavigationId,
-                        notificationsEnabled
+                        notificationNavigationId
                     )
                 )
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        notificationsEnabled = arePushNotificationsEnabled()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -99,13 +90,6 @@ class MainActivity : ComponentActivity() {
                 removeExtra(EXTRA_PUSH_ID)
             }
         )
-    }
-
-    private fun arePushNotificationsEnabled(): Boolean {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (!manager.areNotificationsEnabled()) return false
-        val pushChannel = manager.getNotificationChannel(PushNotifier.CHANNEL_ID)
-        return pushChannel == null || pushChannel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
     companion object {

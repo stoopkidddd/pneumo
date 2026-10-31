@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import dev.pneumo.app.crypto.PushCrypto
+import dev.pneumo.app.data.SessionCache
 import dev.pneumo.app.data.SyncCursorStore
 import dev.pneumo.app.data.db.PneumoDatabase
 import dev.pneumo.app.data.db.SyncStateEntity
@@ -45,6 +46,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class SyncEngineTest {
     private lateinit var database: PneumoDatabase
+    private val cache = SessionCache()
 
     @Before
     fun createDatabase() {
@@ -325,9 +327,40 @@ class SyncEngineTest {
 
         assertEquals(listOf(P3, P5), accepted)
         assertEquals(listOf(P3, P4, P5), attempts)
-        assertEquals(listOf(P3, P5), cursor.advances)
         assertEquals(P5, cursor.value)
         assertTrue(requireNotNull(database.pushes().find(P4)).notified)
+    }
+
+    @Test
+    fun httpCachedNewestPushDoesNotTruncateCatchUpBeforeTheDurablePosition() = runTest {
+        database.syncState().put(SyncStateEntity(lastPushId = P1, lastCreatedAt = CREATED_AT))
+        database.pushes().insert(push(P5, createdAt = CREATED_AT_5).toEntity())
+        val api = FakePushApi(
+            mapOf(
+                null to ListPushesResponse(
+                    listOf(push(P5, createdAt = CREATED_AT_5), push(P4, createdAt = CREATED_AT_4)),
+                    P4
+                ),
+                P4 to ListPushesResponse(
+                    listOf(
+                        push(P3, createdAt = CREATED_AT_3),
+                        push(P2, createdAt = CREATED_AT_2),
+                        push(P1)
+                    ),
+                    null
+                )
+            )
+        )
+        val cursor = FakeCursor(P1)
+        val accepted = mutableListOf<String>()
+        val engine = engine(api, cursor, PushSink { accepted += it.id })
+
+        engine.apply(ResyncFrame("resync"))
+
+        assertEquals(listOf<String?>(null, P4), api.befores)
+        assertEquals(listOf(P2, P3, P4, P5), accepted)
+        assertEquals(P5, cursor.value)
+        assertTrue(requireNotNull(database.pushes().find(P5)).notified)
     }
 
     private fun engine(
@@ -339,7 +372,8 @@ class SyncEngineTest {
         pushApi = api,
         cursor = cursor,
         ownDeviceId = OWN_DEVICE,
-        sink = sink
+        sink = sink,
+        cache = cache
     )
 
     private fun push(

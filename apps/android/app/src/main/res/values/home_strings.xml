@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_title">History</string>
+    <string name="home_loading">Loading your pushes…</string>
+    <string name="home_empty_title">Nothing here yet</string>
+    <string name="home_empty_body">Send a note or link below, or receive one from another device.</string>
+    <string name="home_offline">Offline · showing saved history</string>
+    <string name="home_retry">Try again</string>
+    <string name="home_load_older">Load older pushes</string>
+    <string name="home_loading_older">Loading older pushes…</string>
+    <string name="home_note">Note</string>
+    <string name="home_link">Link</string>
+    <string name="home_file">File</string>
+    <string name="home_removed_device">Removed device</string>
+    <string name="home_selected_push">Selected push</string>
+    <string name="home_copy">Copy</string>
+    <string name="home_copied">Copied</string>
+    <string name="home_open">Open</string>
+    <string name="home_delete">Delete</string>
+    <string name="home_deleted">Push deleted</string>
+    <string name="home_undo">Undo</string>
+    <string name="home_composer_message">Message</string>
+    <string name="home_composer_placeholder">Type a note or paste a link</string>
+    <string name="home_link_detected">Link detected</string>
+    <string name="home_target_label">Send to</string>
+    <string name="home_target_all">All devices</string>
+    <string name="home_device_online">online</string>
+    <string name="home_device_offline">offline</string>
+    <string name="home_send">Send</string>
+    <string name="home_sending">Sending…</string>
+</resources>

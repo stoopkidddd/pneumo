@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_activity_label">Send with Pneumo</string>
+    <string name="share_close">Close</string>
+    <string name="share_loading">Preparing your share…</string>
+    <string name="share_pair_title">Pair Pneumo first</string>
+    <string name="share_pair_body">Connect this phone to your Pneumo server before sending shared text.</string>
+    <string name="share_pair_action">Pair Pneumo</string>
+    <string name="share_invalid_title">Can’t share this</string>
+    <string name="share_invalid_body">Share some text and try again.</string>
+    <string name="share_prepare_error_title">Couldn’t prepare your share</string>
+    <string name="share_prepare_error_body">Pneumo couldn’t open your paired session. Try again.</string>
+    <string name="share_retry">Try again</string>
+    <string name="share_note_label">Note</string>
+    <string name="share_link_label">Link</string>
+    <string name="share_target_label">Send to</string>
+    <string name="share_target_all">All devices</string>
+    <string name="share_device_online">Online</string>
+    <string name="share_device_offline">Offline</string>
+    <string name="share_message_label">Add a message (optional)</string>
+    <string name="share_message_supporting">For links, this appears below the title. For notes, it is added after the shared text.</string>
+    <string name="share_send">Send</string>
+    <string name="share_sending">Enqueuing…</string>
+    <string name="share_enqueue_error">Couldn’t queue this share. Try again.</string>
+    <string name="share_devices_refresh_error">Couldn’t refresh devices. Showing saved targets.</string>
+    <string name="share_target_menu_description">Choose a target device</string>
+</resources>

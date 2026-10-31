@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import dev.pneumo.app.AppContainer
 import dev.pneumo.app.BuildConfig
 import dev.pneumo.app.net.ws.ConnectionState
 import dev.pneumo.app.ui.screens.ConfirmScreen
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 fun PneumoNavHost(
     viewModel: PairingViewModel,
     connectionState: StateFlow<ConnectionState>,
+    container: AppContainer,
     modifier: Modifier = Modifier,
     notifications: NotificationUiState = NotificationUiState()
 ) {
@@ -76,6 +78,7 @@ fun PneumoNavHost(
                     state = state,
                     connection = connection,
                     notifications = notifications,
+                    container = container,
                     onSignOut = viewModel::signOut
                 )
             }
