@@ -118,3 +118,17 @@ test("redacts structured request secrets without changing caller data", () => {
   expect(requestFields.sort()).toEqual(["method", "ms", "path", "requestId", "status"]);
   expect("body" in (requestLog ?? {})).toBe(false);
 });
+
+test("redacts detached Web Push keys in nested objects, arrays and child bindings", () => {
+  const { lines, destination } = captureLogs();
+  const logger = createLogger("info", destination);
+  const keys = { p256dh: P256DH, auth: WEB_PUSH_AUTH };
+  logger.info({ keys, nested: [{ keys }] }, "Subscription keys");
+  logger.child({ keys }).info("Child subscription keys");
+  const captured = lines.join("");
+  expect(captured.includes(P256DH)).toBe(false);
+  expect(captured.includes(WEB_PUSH_AUTH)).toBe(false);
+  for (const line of lines) {
+    expect(JSON.parse(line).keys).toEqual({ p256dh: "[Redacted]", auth: "[Redacted]" });
+  }
+});

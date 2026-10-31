@@ -45,21 +45,17 @@ const SECRET_KEYS: Record<string, true> = {
   authkey: true,
   setuptoken: true,
   envelope: true,
+  p256dh: true,
+  auth: true,
   s3_access_key_id: true,
   s3_secret_access_key: true,
 };
-const WEB_PUSH_CONTAINERS: Record<string, true> = {
-  webpush: true,
-  subscription: true,
-};
 
 type SanitizeContext = {
-  readonly inWebPush: boolean;
   readonly isUrl: boolean;
 };
 
 const ROOT_CONTEXT: SanitizeContext = {
-  inWebPush: false,
   isUrl: false,
 };
 
@@ -85,14 +81,6 @@ function removeUrlQuery(value: string): string {
   }
 }
 
-function isSensitiveKey(key: string, inWebPush: boolean): boolean {
-  const normalized = key.toLowerCase();
-  return (
-    SECRET_KEYS[normalized] === true ||
-    (inWebPush && (normalized === "p256dh" || normalized === "auth"))
-  );
-}
-
 function sanitizeValue(
   value: unknown,
   context: SanitizeContext,
@@ -114,7 +102,7 @@ function sanitizeValue(
     return value;
   }
 
-  const contextKey = (context.inWebPush ? 1 : 0) | (context.isUrl ? 2 : 0);
+  const contextKey = context.isUrl ? 1 : 0;
   let contextCopies = seen.get(value);
   const existing = contextCopies?.get(contextKey);
   if (existing !== undefined) {
@@ -142,9 +130,7 @@ function sanitizeValue(
       continue;
     }
 
-    const normalized = key.toLowerCase();
-    const inWebPush = context.inWebPush || WEB_PUSH_CONTAINERS[normalized] === true;
-    if (isSensitiveKey(key, inWebPush)) {
+    if (SECRET_KEYS[key.toLowerCase()] === true) {
       copy[key] = REDACTED;
       continue;
     }
@@ -152,7 +138,6 @@ function sanitizeValue(
     copy[key] = sanitizeValue(
       descriptor.value,
       {
-        inWebPush,
         isUrl: context.isUrl || isUrlField(key),
       },
       seen,

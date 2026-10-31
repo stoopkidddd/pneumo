@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
+import type { HttpBindings } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { HealthResponse } from "@pneumo/protocol";
+import { type DeviceDTO, HealthResponse } from "@pneumo/protocol";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
 import packageJson from "../package.json" with { type: "json" };
+import { createAuthRoutes } from "./auth/routes.js";
 import type { Config } from "./config.js";
+import type { DeviceRegistry } from "./devices/registry.js";
+import { createDeviceRoutes } from "./devices/routes.js";
 import { errorResponse, handleError } from "./http/errors.js";
 import { securityHeaders, staticCacheControl } from "./http/headers.js";
+import type { InstanceState } from "./instance/state.js";
 import { createRequestLogger } from "./log.js";
+import { createPairingRoutes } from "./pairing/routes.js";
 import type { Storage } from "./storage/types.js";
 import type { UploadMode } from "./storage/upload-mode.js";
 
@@ -19,23 +25,22 @@ export interface Clock {
 
 export const systemClock: Clock = { now: () => Date.now() };
 
-export interface InstanceState {
-  initialized: boolean;
-}
-
 export interface AppDependencies {
   config: Config;
   storage: Storage;
   clock: Clock;
   logger: Logger;
   instanceState: InstanceState;
+  devices: DeviceRegistry;
   uploadMode: UploadMode;
 }
 
 export type AppEnv = {
+  Bindings: HttpBindings;
   Variables: {
     logger: Logger;
     requestId: string;
+    device: DeviceDTO;
     staticPath?: string;
   };
 };
@@ -91,6 +96,9 @@ export function createApp(deps: AppDependencies) {
       }),
     ),
   );
+  app.route("/api", createAuthRoutes(deps));
+  app.route("/api", createDeviceRoutes(deps));
+  app.route("/api", createPairingRoutes(deps));
   app.all("/api", (c) => errorResponse(c, "not_found"));
   app.all("/api/*", (c) => errorResponse(c, "not_found"));
 

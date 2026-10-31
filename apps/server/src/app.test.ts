@@ -2,12 +2,16 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
+import { b64uEncode, deriveKeys, deriveMasterKey, keyCheck, newKdfParams } from "@pneumo/crypto";
 import { ErrorBody } from "@pneumo/protocol";
 import { HTTPException } from "hono/http-exception";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 import { createApp, systemClock } from "./app.js";
 import { loadConfig } from "./config.js";
+import { DeviceRegistry } from "./devices/registry.js";
+import { EventBus } from "./events.js";
+import { InstanceState } from "./instance/state.js";
 import { createLogger } from "./log.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { UploadMode } from "./storage/upload-mode.js";
@@ -31,7 +35,7 @@ afterAll(async () => {
   await rm(webDist, { recursive: true, force: true });
 });
 
-function fixture(
+async function fixture(
   overrides: NodeJS.ProcessEnv = {},
   bucketOrigin?: string,
   uploadMode: UploadMode = bucketOrigin ? "direct" : "proxy",
@@ -49,18 +53,24 @@ function fixture(
     S3_BUCKET: "test-bucket",
     S3_ACCESS_KEY_ID: "fake-access-key",
     S3_SECRET_ACCESS_KEY: "fake-secret-key",
+    PNEUMO_SETUP_TOKEN: "fixed-test-setup",
     WEB_DIST_DIR: webDist,
     ...overrides,
   });
-  const instanceState = { initialized: false };
+  const storage = new MemoryStorage(bucketOrigin ? { bucketOrigin } : {});
+  const logger = createLogger("info", destination);
   let now = Date.parse("2026-01-01T00:00:00.000Z");
+  const clock = { now: () => (now += 5) };
+  const instanceState = await InstanceState.load({ storage, config, clock, logger });
+  const devices = await DeviceRegistry.load({ storage, clock, events: new EventBus() });
   const app = createApp({
     config,
-    storage: new MemoryStorage(bucketOrigin ? { bucketOrigin } : {}),
+    storage,
     uploadMode,
-    logger: createLogger("info", destination),
-    clock: { now: () => (now += 5) },
+    logger,
+    clock,
     instanceState,
+    devices,
   });
   return { app, instanceState, lines };
 }
@@ -70,7 +80,7 @@ test("the production clock returns Unix epoch milliseconds", () => {
 });
 
 test("health reports package version and live injected initialization state", async () => {
-  const { app, instanceState } = fixture();
+  const { app } = await fixture();
   const response = await app.request("/api/health");
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({
@@ -78,7 +88,21 @@ test("health reports package version and live injected initialization state", as
     version: packageJson.version,
     initialized: false,
   });
-  instanceState.initialized = true;
+  const kdf = newKdfParams();
+  const masterKey = await deriveMasterKey("fixed test browser passphrase", kdf);
+  const { authKey } = await deriveKeys(masterKey);
+  const setupResponse = await app.request("/api/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      setupToken: "fixed-test-setup",
+      kdf,
+      authKey: b64uEncode(authKey),
+      keyCheck: b64uEncode(await keyCheck(masterKey)),
+      device: { name: "Test browser", platform: "web" },
+    }),
+  });
+  expect(setupResponse.status).toBe(201);
   expect(await (await app.request("/api/health")).json()).toEqual({
     ok: true,
     version: packageJson.version,
@@ -89,7 +113,7 @@ test("health reports package version and live injected initialization state", as
 test.each(["/", "/index.html", "/devices/deep/link", "/apiary"])(
   "serves the SPA with no-cache at %s",
   async (path) => {
-    const { app } = fixture();
+    const { app } = await fixture();
     const response = await app.request(path);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-cache");
@@ -101,7 +125,7 @@ test.each(["/", "/index.html", "/devices/deep/link", "/apiary"])(
 test.each(["/api", "/api/", "/api/missing", "/api/missing/deep"])(
   "returns a protocol JSON 404 rather than the SPA at %s",
   async (path) => {
-    const { app } = fixture();
+    const { app } = await fixture();
     const response = await app.request(path);
     expect(response.status).toBe(404);
     expect(response.headers.get("Content-Type")).toContain("application/json");
@@ -112,14 +136,14 @@ test.each(["/api", "/api/", "/api/missing", "/api/missing/deep"])(
 );
 
 test("does not use SPA fallback for non-GET requests", async () => {
-  const { app } = fixture();
+  const { app } = await fixture();
   const response = await app.request("/devices", { method: "POST" });
   expect(response.status).toBe(404);
   expect(ErrorBody.parse(await response.json()).error.code).toBe("not_found");
 });
 
 test("serves hashed assets immutably, with HEAD support", async () => {
-  const { app } = fixture();
+  const { app } = await fixture();
   const response = await app.request("/assets/app-B8xGgkQ2.js");
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
@@ -133,7 +157,7 @@ test("serves hashed assets immutably, with HEAD support", async () => {
 test.each(["/sw.js", "/manifest.webmanifest", "/manifest.json"])(
   "never caches the update entrypoint %s immutably",
   async (path) => {
-    const { app } = fixture();
+    const { app } = await fixture();
     const response = await app.request(path);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-cache");
@@ -142,7 +166,7 @@ test.each(["/sw.js", "/manifest.webmanifest", "/manifest.json"])(
 );
 
 test("HTML carries exact CSP and security headers", async () => {
-  const { app } = fixture({}, "https://test-bucket.objects.example");
+  const { app } = await fixture({}, "https://test-bucket.objects.example");
   const response = await app.request("/setup");
   expect(response.headers.get("Content-Security-Policy")).toBe(
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' wss://pneumo.example https://test-bucket.objects.example; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -160,7 +184,7 @@ test("HTML carries exact CSP and security headers", async () => {
 });
 
 test("HTTP omits HSTS and CSP omits the bucket when storage supplies no origin", async () => {
-  const { app } = fixture({ PUBLIC_URL: "http://localhost:8080" });
+  const { app } = await fixture({ PUBLIC_URL: "http://localhost:8080" });
   const response = await app.request("/");
   expect(response.headers.has("Strict-Transport-Security")).toBe(false);
   expect(response.headers.get("Content-Security-Policy")).toContain(
@@ -172,7 +196,11 @@ test("HTTP omits HSTS and CSP omits the bucket when storage supplies no origin",
 test.each(["auto", "direct", "proxy"])(
   "resolved proxy mode omits the bucket origin even when configured mode is %s",
   async (mode) => {
-    const { app } = fixture({ UPLOAD_MODE: mode }, "https://test-bucket.objects.example", "proxy");
+    const { app } = await fixture(
+      { UPLOAD_MODE: mode },
+      "https://test-bucket.objects.example",
+      "proxy",
+    );
     const response = await app.request("/");
     expect(response.headers.get("Content-Security-Policy")).toContain(
       "connect-src 'self' wss://pneumo.example;",
@@ -182,7 +210,7 @@ test.each(["auto", "direct", "proxy"])(
 );
 
 test("JSON body limit accepts exactly 128 KiB and rejects the next byte", async () => {
-  const { app } = fixture();
+  const { app } = await fixture();
   app.post("/body", async (c) => c.json({ size: (await c.req.text()).length }));
   for (const withLength of [false, true]) {
     for (const size of [128 * 1024, 128 * 1024 + 1]) {
@@ -206,7 +234,7 @@ test("JSON body limit accepts exactly 128 KiB and rejects the next byte", async 
 });
 
 test("raw file bodies are not subject to the JSON limit", async () => {
-  const { app } = fixture();
+  const { app } = await fixture();
   app.put("/binary", async (c) => c.json({ size: (await c.req.arrayBuffer()).byteLength }));
   const size = 128 * 1024 + 1;
   const response = await app.request("/binary", {
@@ -218,7 +246,7 @@ test("raw file bodies are not subject to the JSON limit", async () => {
 });
 
 test("errors are protocol JSON without exception details or stacks", async () => {
-  const { app, lines } = fixture();
+  const { app, lines } = await fixture();
   app.post("/failure", () => {
     throw new Error("private failure detail");
   });
@@ -242,7 +270,7 @@ test("errors are protocol JSON without exception details or stacks", async () =>
 });
 
 test("request logs use child ids and method/path/status/ms, never file query credentials", async () => {
-  const { app, lines } = fixture();
+  const { app, lines } = await fixture();
   const responses = await Promise.all([
     app.request("/api/files?signature=fake-query-credential"),
     app.request("/api/files/id/content?token=fake-query-token", {

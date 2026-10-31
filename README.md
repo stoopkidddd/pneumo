@@ -32,8 +32,9 @@ mise run fmt             # Format TS packages and root config; exclude Android, 
 `mise exec -- pnpm test` runs all four Vitest projects. Start the minimal web app with
 `mise exec -- pnpm --filter @pneumo/web dev`.
 
-Copy `.env.example` to `.env.local`, then run `mise exec -- pnpm --filter @pneumo/server dev`
-for the server watcher. For a production-style local run:
+Copy `.env.example` to `.env.local`, start the development bucket with `mise run dev:infra`,
+then run `mise exec -- pnpm --filter @pneumo/server dev` for the server watcher.
+For a production-style local run:
 
 ```sh
 mise exec -- pnpm --filter @pneumo/web build
@@ -42,8 +43,24 @@ mise exec -- node --env-file=.env.local apps/server/dist/index.js
 ```
 
 The server serves the built web app and `GET /api/health`. `WEB_DIST_DIR` defaults to
-`apps/web/dist`, resolved relative to the server rather than the current directory. Health reads
-the server package version; `initialized` remains false until setup is implemented.
+`apps/web/dist`, resolved relative to the server rather than the current directory. Before
+listening, the server loads `meta/owner.json` and the device registry from the bucket.
+Health reports the package version and whether the owner record exists.
+
+First-run setup uses `PNEUMO_SETUP_TOKEN` when configured. Otherwise startup logs one
+warning containing the setup URL and its token fragment, only while uninitialized.
+`POST /api/setup` conditionally creates the owner record and registers the first device;
+subsequent attempts return 409. The server receives derived authentication material,
+never the passphrase, and stores a salted scrypt verifier.
+
+Login creates a device with a bearer token; only its SHA-256 hash is persisted.
+Authentication failures are limited to five per IP and thirty globally per fifteen minutes.
+`TRUST_PROXY` controls whether the first `X-Forwarded-For` address identifies the client.
+Authenticated clients can list, rename and revoke devices, store or clear their own Web Push
+subscription, and issue single-use ten-minute Android pairing codes. Revocation invalidates
+the token immediately and signals socket closure for the later WebSocket hub.
+`GET /api/me` returns the key check and resolved upload mode; `vapidPublicKey` is null until
+Web Push is implemented. Device DTOs never expose token hashes or subscriptions.
 
 Server bucket access uses the `Storage` contract in `apps/server/src/storage/types.ts`.
 `S3Storage` is used at runtime; tests use `MemoryStorage` or an isolated MinIO instance.
@@ -58,8 +75,9 @@ and uploads use proxy mode. A briefly missing bucket is retried for about ten se
 `minio-init` can finish; other failures fall back immediately. Explicit `direct`/`proxy`
 skip detection. CSP includes the bucket origin only in the resolved direct mode.
 
-The shared storage contract runs against memory in `check:server` (no Docker) and against
-real MinIO with:
+Storage and authentication route tests use memory and fake clocks in `check:server`
+(no Docker). Run the MinIO storage, setup/device persistence, and bundled HTTP lifecycle
+integration tests with:
 
 ```sh
 mise exec -- pnpm --filter @pneumo/server test:e2e
@@ -71,8 +89,9 @@ The pinned MinIO build provides global CORS via `MINIO_API_CORS_ALLOW_ORIGIN` bu
 bucket `PutBucketCors` as unsupported, so auto detection selects proxy mode. Forced direct
 mode still permits signed PUT/GET when bucket CORS is configured externally.
 
-`check:server` also builds the server and launches the bundle with plain Node, an ephemeral port,
-and a temporary web fixture. It checks health, HTML serving, safe config failures, and SIGTERM
+`check:server` also checks bundled startup's safe config failures. The MinIO integration
+suite launches the bundle with plain Node, an ephemeral port, and a temporary web fixture.
+It exercises setup, authentication, pairing, restart persistence, HTML serving, and SIGTERM
 shutdown. The shutdown hook list in `src/index.ts` is the registration point for the later
 WebSocket hub; hooks receive close code 1012, with a ten-second drain deadline.
 Storage sockets remain open during the drain; process exit releases them afterward.
