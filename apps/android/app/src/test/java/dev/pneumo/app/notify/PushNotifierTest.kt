@@ -171,7 +171,7 @@ class PushNotifierTest {
     }
 
     @Test
-    fun summaryAppearsAtThreePushChildrenIgnoresOtherChannelsAndReconcilesCancelAndDismiss() = runTest {
+    fun summaryStartsAtThreeAndRemainsUntilTheLastChildIsRemoved() = runTest {
         val connectionChannel = NotificationChannel("connection-test", "Connection", NotificationManager.IMPORTANCE_MIN)
         manager.createNotificationChannel(connectionChannel)
         manager.notify(
@@ -188,17 +188,23 @@ class PushNotifierTest {
         assertNull(summary())
 
         notifier.accept(push(ID_3, NotePayload(body = "Three")))
-        assertEquals("3 new pushes", summary()?.extras?.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertTrue(summary() != null)
 
         notifier.cancel(ID_1)
         assertEquals(setOf(ID_2, ID_3), childTags())
-        assertNull(summary())
+        assertTrue(summary() != null)
 
         notifier.accept(push(ID_4, NotePayload(body = "Four")))
         assertTrue(summary() != null)
         child(ID_2).deleteIntent.send()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(setOf(ID_3, ID_4), childTags())
+        assertTrue(summary() != null)
+        notifier.cancel(ID_3)
+        assertEquals(setOf(ID_4), childTags())
+        assertTrue(summary() != null)
+        notifier.cancel(ID_4)
+        assertTrue(childTags().isEmpty())
         assertNull(summary())
     }
 

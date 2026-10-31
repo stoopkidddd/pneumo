@@ -46,8 +46,7 @@ class PushNotifier(private val context: Context, private val ownDeviceId: String
         val payload = PushCrypto.decrypt(contentKey, push.id, push.envelope)
         val notification = notification(push, payload)
         try {
-            manager.notify(push.id, push.id.hashCode(), notification)
-            PushNotificationGroup.reconcile(context)
+            PushNotificationGroup.post(context, push.id, notification)
         } catch (_: SecurityException) {
             // Notification permission can be revoked between the check and notify().
         }
@@ -202,25 +201,61 @@ internal object PushNotificationGroup {
     const val SUMMARY_TAG = "pushes-summary"
     private const val SUMMARY_ID = 1
     private const val SUMMARY_THRESHOLD = 3
+    private var trackedManager: NotificationManager? = null
+    private var childIds: MutableSet<String>? = null
+    private var summaryShown = false
 
-    fun cancelChild(context: Context, pushId: String) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.cancel(pushId, pushId.hashCode())
-        reconcile(context)
+    @Synchronized
+    fun post(context: Context, pushId: String, notification: Notification) {
+        val manager = context.applicationContext.getSystemService(NotificationManager::class.java)
+        val children = children(manager)
+        manager.notify(pushId, pushId.hashCode(), notification)
+        children.add(pushId)
+        reconcile(context, manager, children.size)
     }
 
-    fun reconcile(context: Context) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        val childCount = manager.activeNotifications.count { status ->
-            status.tag != SUMMARY_TAG &&
-                status.notification.channelId == PushNotifier.CHANNEL_ID &&
-                status.notification.group == GROUP_KEY &&
-                status.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
+    @Synchronized
+    fun cancelChild(context: Context, pushId: String) {
+        val manager = context.applicationContext.getSystemService(NotificationManager::class.java)
+        val children = children(manager)
+        manager.cancel(pushId, pushId.hashCode())
+        children.remove(pushId)
+        reconcile(context, manager, children.size)
+    }
+
+    private fun children(manager: NotificationManager): MutableSet<String> {
+        if (trackedManager !== manager) {
+            trackedManager = manager
+            childIds = null
+            summaryShown = false
         }
-        if (childCount < SUMMARY_THRESHOLD) {
+        childIds?.let { return it }
+        val restored = mutableSetOf<String>()
+        for (status in manager.activeNotifications) {
+            if (status.notification.channelId != PushNotifier.CHANNEL_ID ||
+                status.notification.group != GROUP_KEY
+            ) {
+                continue
+            }
+            if (status.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) {
+                summaryShown = true
+            } else {
+                status.tag?.let(restored::add)
+            }
+        }
+        // Seed once after process startup, then apply known mutations: notify/cancel are asynchronous.
+        childIds = restored
+        return restored
+    }
+
+    private fun reconcile(context: Context, manager: NotificationManager, childCount: Int) {
+        if (childCount == 0) {
             manager.cancel(SUMMARY_TAG, SUMMARY_ID)
+            summaryShown = false
             return
         }
+        // Cancelling a summary also cancels its children in NotificationManagerService.
+        if (childCount < SUMMARY_THRESHOLD && !summaryShown) return
         val openApp = PendingIntent.getActivity(
             context,
             0,
@@ -242,6 +277,7 @@ internal object PushNotificationGroup {
             .build()
         try {
             manager.notify(SUMMARY_TAG, SUMMARY_ID, summary)
+            summaryShown = true
         } catch (_: SecurityException) {
             // Notification permission can be revoked while active notifications are reconciled.
         }

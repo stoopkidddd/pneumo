@@ -94,7 +94,7 @@ class NotificationActionsTest {
         assertEquals(Uri.parse(url), forwarded.data)
         assertNull(forwarded.component)
         assertNull(manager.activeNotifications.singleOrNull { it.tag == ID_1 })
-        assertNull(manager.activeNotifications.singleOrNull { it.tag == PushNotificationGroup.SUMMARY_TAG })
+        assertNotNull(manager.activeNotifications.singleOrNull { it.tag == PushNotificationGroup.SUMMARY_TAG })
         controller.destroy()
     }
 

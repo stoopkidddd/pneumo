@@ -186,14 +186,20 @@ The high-importance `pushes` channel renders notes with expanded text, links wit
 their URL, and files with their name, size and caption. Payloads are decrypted
 only while building the notification; no plaintext history or payload cache is
 written. Tagged notification ids and action identities remain distinct even when
-push-id hashes collide. A group summary appears at three visible push children
-and is reconciled after Copy, Open, body taps, dismissals and `push_deleted`.
+push-id hashes collide. A group summary first appears at three visible children
+and remains until the last child is removed: cancelling a summary in Android also
+cancels its children. A synchronized, application-scoped set of push ids is seeded
+from active notifications after process startup, then updated with known posts
+and removals rather than asynchronous notification-service snapshots. Copy, Open,
+body taps, dismissals and `push_deleted` all preserve the other unread children.
 
 Copy uses an immutable, non-exported broadcast and cancels the push notification.
 Only API 32 and earlier show a custom "Copied" toast. Open uses an immutable
 activity intent with `ACTION_VIEW` and the HTTP(S) URL. The non-exported
 `OpenActivity` cancels the notification before forwarding to the browser: Android
-does not apply notification auto-cancel to action buttons. The dispatcher rejects
+does not apply notification auto-cancel to action buttons. Its empty task affinity
+and no-display theme keep Pneumo's existing task behind the previous screen, so
+Back from the browser does not unexpectedly open Pneumo. The dispatcher rejects
 non-HTTP(S) URLs; protocol payload validation already excludes them.
 
 Download sends `dev.pneumo.app.notify.DOWNLOAD` to `DownloadRequestedReceiver`
@@ -264,6 +270,13 @@ onboarding persistence. QR analyzer tests decode padded luminance frames and
 verify frame ownership on unreadable input.
 Robolectric lifecycle cases cover consumed-link recreation, saved task bundles,
 history launches and stored-session precedence over cold and warm foreign links.
+
+`PushNotificationGroupTest` posts three pushes back-to-back against the managed
+device's real notification service. It verifies that Copy and a system-style
+dismissal leave both unread children posted, and that the summary survives until
+the last child is removed. Each expected state must remain stable while queued
+notification-service operations settle. Robolectric does not model Android's
+summary-cancellation cascade, so it cannot replace this device regression.
 
 Connection tests cover hello cursors, ordered replay/live dedupe, resync overlap,
 device/deletion frames, notification eligibility, unauthorized sign-out, jitter
