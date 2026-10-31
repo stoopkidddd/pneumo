@@ -1,0 +1,9 @@
+{
+  "type": "hello",
+  "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "since": "latest",
+  "client": {
+    "platform": "android",
+    "version": "0.1.0"
+  }
+}

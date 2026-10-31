@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://push.example.test/subscriptions/fake-device",
+  "keys": {
+    "p256dh": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "auth": "AAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

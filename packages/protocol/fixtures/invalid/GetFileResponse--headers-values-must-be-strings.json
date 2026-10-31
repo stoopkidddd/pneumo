@@ -1,0 +1,9 @@
+{
+  "download": {
+    "url": "https://storage.example.test/file",
+    "headers": {
+      "accept": 1
+    }
+  },
+  "expiresAt": "2026-10-30T13:00:00.000Z"
+}

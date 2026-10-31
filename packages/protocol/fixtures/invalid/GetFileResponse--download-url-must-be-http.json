@@ -1,0 +1,7 @@
+{
+  "download": {
+    "url": "ftp://storage.example.test/file",
+    "headers": {}
+  },
+  "expiresAt": "2026-10-30T13:00:00.000Z"
+}

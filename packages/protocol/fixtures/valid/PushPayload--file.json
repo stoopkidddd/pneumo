@@ -1,0 +1,10 @@
+{
+  "type": "file",
+  "body": "For review.",
+  "file": {
+    "name": "report.pdf",
+    "mime": "application/pdf",
+    "size": 65536,
+    "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

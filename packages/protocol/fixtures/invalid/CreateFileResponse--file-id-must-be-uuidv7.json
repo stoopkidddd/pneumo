@@ -1,0 +1,9 @@
+{
+  "fileId": "file-1",
+  "upload": {
+    "method": "PUT",
+    "url": "https://storage.example.test/files/fake-upload",
+    "headers": {}
+  },
+  "expiresAt": "2026-10-30T13:00:00.000Z"
+}

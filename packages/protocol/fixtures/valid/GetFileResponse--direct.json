@@ -1,0 +1,9 @@
+{
+  "download": {
+    "url": "https://storage.example.test/files/fake-download",
+    "headers": {
+      "accept": "application/octet-stream"
+    }
+  },
+  "expiresAt": "2026-10-30T13:00:00.000Z"
+}

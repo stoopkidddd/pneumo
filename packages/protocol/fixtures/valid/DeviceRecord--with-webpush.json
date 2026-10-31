@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "id": "019a36f0-7b00-7000-8000-000000000001",
+  "name": "Pixel 9",
+  "platform": "web",
+  "createdAt": "2026-10-30T12:00:00.000Z",
+  "lastSeenAt": "2026-10-30T12:05:00.000Z",
+  "tokenHash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "webPush": {
+    "endpoint": "https://push.example.test/subscriptions/fake-device",
+    "keys": {
+      "p256dh": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "auth": "AAAAAAAAAAAAAAAAAAAAAA"
+    }
+  }
+}

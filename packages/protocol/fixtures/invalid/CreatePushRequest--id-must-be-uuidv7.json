@@ -1,0 +1,10 @@
+{
+  "id": "push-1",
+  "targetDeviceId": null,
+  "envelope": {
+    "v": 1,
+    "n": "AAAAAAAAAAAAAAAA",
+    "c": "AAAAAAAAAAAAAAAAAAAAAA"
+  },
+  "file": null
+}

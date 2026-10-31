@@ -1,0 +1,5 @@
+{
+  "subscription": {
+    "endpoint": "https://push.example.test/subscriptions/fake-device"
+  }
+}

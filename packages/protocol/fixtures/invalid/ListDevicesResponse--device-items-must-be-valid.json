@@ -1,0 +1,12 @@
+{
+  "devices": [
+    {
+      "id": "019a36f0-7b00-7000-8000-000000000001",
+      "name": "Pixel 9",
+      "platform": "android",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "lastSeenAt": "2026-10-30T12:05:00.000Z",
+      "online": "yes"
+    }
+  ]
+}
