@@ -26,6 +26,11 @@ export interface RunningWebRuntime {
   stop(): Promise<void>;
 }
 
+export interface WebRuntimeOptions {
+  uploadMode?: "direct" | "proxy";
+  maxFileBytes?: number;
+}
+
 export async function startMinio(options: { envOut?: string } = {}): Promise<MinioInstance> {
   const instance = await provisionMinio(options);
   for (const [name, value] of Object.entries(instance.env)) {
@@ -43,7 +48,7 @@ function required(name: string): string {
   return value;
 }
 
-function serverEnvironment(prefix: string): NodeJS.ProcessEnv {
+function serverEnvironment(prefix: string, options: WebRuntimeOptions = {}): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH,
     PORT: "0",
@@ -56,7 +61,8 @@ function serverEnvironment(prefix: string): NodeJS.ProcessEnv {
     S3_FORCE_PATH_STYLE: required("PNEUMO_E2E_S3_FORCE_PATH_STYLE"),
     S3_PREFIX: prefix,
     PNEUMO_SETUP_TOKEN: SETUP_TOKEN,
-    UPLOAD_MODE: "direct",
+    UPLOAD_MODE: options.uploadMode ?? "direct",
+    ...(options.maxFileBytes === undefined ? {} : { MAX_FILE_BYTES: String(options.maxFileBytes) }),
     WEB_DIST_DIR: webDistDirectory,
     LOG_LEVEL: "silent",
     TRUST_PROXY: "false",
@@ -173,10 +179,13 @@ async function readDeviceHasWebPush(prefix: string, deviceId: string): Promise<b
   }
 }
 
-export async function startWebRuntime(prefix: string): Promise<RunningWebRuntime> {
+export async function startWebRuntime(
+  prefix: string,
+  options: WebRuntimeOptions = {},
+): Promise<RunningWebRuntime> {
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: serverDirectory,
-    env: serverEnvironment(prefix),
+    env: serverEnvironment(prefix, options),
     stdio: "ignore",
   });
   try {

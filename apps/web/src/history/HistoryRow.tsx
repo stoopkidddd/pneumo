@@ -1,5 +1,8 @@
 import type { DeviceDTO } from "@pneumo/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DownloadButton } from "../files/FileTransfer.js";
+import { formatBytes } from "../files/transfer.js";
+import type { FileDownloader } from "../files/useFiles.js";
 import { ErrorNotice } from "../views/fields.js";
 import type { HistoryItem } from "./reducer.js";
 
@@ -9,12 +12,14 @@ export function HistoryRow({
   highlighted,
   now,
   onDelete,
+  onDownload,
 }: {
   item: HistoryItem;
   devices: DeviceDTO[];
   highlighted: boolean;
   now: number;
   onDelete: (id: string) => Promise<void>;
+  onDownload: FileDownloader;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
@@ -98,6 +103,12 @@ export function HistoryRow({
       <svg className="push-icon" aria-hidden="true" viewBox="0 0 20 20">
         {payload?.type === "link" ? (
           <path d="m8 12 4-4M7 6l2-2a4 4 0 0 1 6 6l-2 2m-6-4-2 2a4 4 0 0 0 6 6l2-2" />
+        ) : payload?.type === "file" && payload.file.mime.startsWith("image/") ? (
+          <>
+            <rect x="2" y="2" width="16" height="16" rx="1" />
+            <circle cx="7" cy="7" r="1.5" />
+            <path d="m3 16 5-5 3 3 3-5 3 7" />
+          </>
         ) : (
           <path d="M5 2h7l4 4v12H5V2Zm7 0v5h4M8 10h5m-5 4h5" />
         )}
@@ -125,7 +136,12 @@ export function HistoryRow({
         ) : (
           <>
             {payload.title && <h3>{payload.title}</h3>}
-            {payload.type === "file" && <p>{payload.file.name}</p>}
+            {payload.type === "file" && (
+              <>
+                <p className="file-name">{payload.file.name}</p>
+                <p className="file-size muted">{formatBytes(payload.file.size)}</p>
+              </>
+            )}
             {payload.type === "link" && payload.body && (
               <p className="push-body expanded">{payload.url}</p>
             )}
@@ -147,6 +163,15 @@ export function HistoryRow({
           </>
         )}
         <div className="push-actions">
+          {payload?.type === "file" && item.file && (
+            <DownloadButton
+              fileId={item.file.id}
+              payload={payload}
+              onDownload={onDownload}
+              buttonRef={copyButton}
+              disabled={item.pending}
+            />
+          )}
           {payload && payload.type !== "file" && (
             <button ref={copyButton} type="button" onClick={() => void copy()}>
               {copied ? "Copied" : "Copy"}

@@ -1,0 +1,76 @@
+.file-name {
+  margin: 0 0 var(--space-xs);
+  font-weight: var(--font-weight-display);
+  overflow-wrap: anywhere;
+}
+
+.file-size,
+.file-status {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-progress {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  max-width: 28rem;
+  font-size: var(--font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-progress progress {
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-border);
+  color: var(--color-accent);
+  accent-color: var(--color-accent);
+}
+
+.file-progress progress::-webkit-progress-bar {
+  background: var(--color-border);
+}
+
+.file-progress progress::-webkit-progress-value {
+  background: var(--color-accent);
+}
+
+.file-progress progress::-moz-progress-bar {
+  background: var(--color-accent);
+}
+
+.file-download {
+  min-width: 0;
+  flex: 1 1 100%;
+}
+
+.file-download .notice {
+  margin-bottom: var(--space-md);
+}
+
+.file-drop-overlay {
+  position: fixed;
+  inset: var(--space-md);
+  z-index: 10;
+  display: grid;
+  place-content: center;
+  padding: var(--space-xl);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  pointer-events: none;
+  text-align: center;
+  font:
+    var(--font-weight-display) var(--font-size-heading) / var(--line-height-heading)
+    var(--font-display);
+}
+
+.composer-attach {
+  justify-self: start;
+}

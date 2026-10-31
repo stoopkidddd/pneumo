@@ -1,6 +1,6 @@
 # Web app shell
 
-The React app uses the generated Switchboard tokens, bundled Chivo and Public Sans fonts, and the approved brand vectors. Theme follows `prefers-color-scheme`; keyboard controls use the brand focus ring. Home supports encrypted notes and links. Devices lists and manages paired devices and adds phones through a pairing QR code.
+The React app uses the generated Switchboard tokens, bundled Chivo and Public Sans fonts, and the approved brand vectors. Theme follows `prefers-color-scheme`; keyboard controls use the brand focus ring. Home supports encrypted notes, links, and files. Devices lists and manages paired devices and adds phones through a pairing QR code.
 
 Internal links use `Link` to push browser history without reloading the document or re-running session bootstrap. Back and Forward update the route through `popstate`; guard redirects replace the current history entry. Modified clicks, new-tab targets, downloads, and external links retain native browser behavior.
 
@@ -22,6 +22,15 @@ Internal links use `Link` to push browser history without reloading the document
 - `src/live/ws.ts` stays connected across protected routes. It validates protocol frames, replies to ping, watches 135 seconds of silence, and reconnects with full jitter or immediately on network/visibility restoration. A 4401 close clears the session and opens login with a message.
 - The cursor advances synchronously for each received push, before decryption. Resync replaces the current page while retaining pending sends and live arrivals; deletion tombstones reject delayed results. Reconnection also refreshes history and devices to catch missed deletions and presence changes.
 - Offline mode retains already loaded history in memory; it does not queue sends or persist a history cache. HTTP failures offer an inline retry. An offline reload opens the precached shell with the stored session and the offline banner; history reloads after reconnection.
+
+## Encrypted files
+
+- **Attach** opens a multiple-file picker. Dropping files anywhere on Home shows a drop overlay; pasting files or images also sends them. These actions send immediately, one push per file, to the selected target. The current message and optional title accompany only the first file.
+- Before reserving any file in a selection, the client compares `ciphertextSize(file.size)` with `/api/me`'s `limits.maxFileBytes` and checks the encrypted metadata envelope. A rejected selection keeps the draft and names the instance limit.
+- A fresh file key encrypts `file.stream()` through `createFileEncryptor` into a Blob. XMLHttpRequest PUT progress appears in History. Direct mode uses the returned presigned URL and signed headers; proxy mode uses the same-origin content route with bearer auth. The browser supplies Content-Length from the Blob.
+- **Cancel** aborts preparation or the active XHR before push creation. The cancelled row can be dismissed; uploaded or reserved orphan files are left for the server sweep. Once push submission starts, Cancel is no longer offered.
+- File rows show the name, plaintext size, and a file/image icon. **Download** fetches the descriptor, reports byte progress, and authenticates the complete stream through `createFileDecryptor` before saving a Blob through an object URL. URLs are revoked after triggering the download. Any integrity failure discards all output and shows “This file was corrupted or tampered with”. File deep links focus Download.
+- `startWebRuntime(prefix, { uploadMode, maxFileBytes })` provisions isolated direct/proxy browser test instances without changing the shared Playwright configuration. Both modes cover random-byte round trips at 0 B, 1 B, 65,536 B, and 5 MiB, multiple selection, drop/paste, exact size boundaries, cancellation after native upload progress, and tamper rejection without a saved file.
 
 ## Devices and phone pairing
 
@@ -77,3 +86,5 @@ Light/dark Home captures are `home-{empty,items,offline,error}-{light,dark}.png`
 Devices captures are `devices-{list,rename,remove-confirm,pairing,paired,revoked-login,self-removed-login}-{light,dark,mobile}.png`; editable Settings captures are `settings-device-name-{light,dark,mobile}.png`. All are under `test-results/screens/` and remain uncommitted. Pairing captures contain only throwaway test-instance QR images, never the raw URI.
 
 Notification captures are `settings-notifications-{off,on,denied,unsupported}-{light,dark,mobile}.png`, `settings-offline-{light,dark,mobile}.png`, `home-notification-prompt-{light,dark,mobile}.png`, and `pwa-update-{light,dark,mobile}.png`, under `test-results/screens/`. The offline-reload flow opens Settings without a network connection and checks its reconnect status. All changed surfaces receive axe checks in each captured theme and viewport. Screenshots remain uncommitted.
+
+File-state axe checks and captures are `file-{uploading,item,tamper}-{light,dark}.png` and `file-{uploading,item,tamper}-mobile.png` in the same directory. Functional file scenarios run in both upload modes; visual captures use direct mode.

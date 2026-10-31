@@ -50,7 +50,11 @@ beforeEach(async () => {
     request: vi.fn(async (name: string) => {
       if (name === "listPushes") return { pushes, nextBefore: null };
       if (name === "listDevices") return { devices: [] };
-      if (name === "me") return { limits: { maxEnvelopeBytes: 65536 } };
+      if (name === "me")
+        return {
+          limits: { maxEnvelopeBytes: 65536, maxFileBytes: 524288000 },
+          uploadMode: "direct",
+        };
       throw new Error(`Unexpected request: ${name}`);
     }) as ApiClient["request"],
   };

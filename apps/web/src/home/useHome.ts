@@ -2,13 +2,14 @@ import { decryptPush, encryptPush } from "@pneumo/crypto";
 import {
   type DeviceDTO,
   type PushDTO,
-  type PushPayload,
   type ServerFrame,
+  type UploadMode,
   uuidv7,
 } from "@pneumo/protocol";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { type ApiClient, ApiError } from "../api/client.js";
 import { deviceReducer, emptyDevices } from "../devices/reducer.js";
+import { type FileActions, type FileSender, useFiles } from "../files/useFiles.js";
 import {
   comparePushes,
   emptyHistory,
@@ -21,25 +22,26 @@ import type { Session } from "../session/store.js";
 type HomeActions = {
   retry: () => void;
   more: () => Promise<void>;
-  send: (payload: PushPayload, target: string | null) => Promise<void>;
+  send: FileSender;
   remove: (id: string) => Promise<void>;
   find: (id: string) => Promise<void>;
   renameDevice: (id: string, name: string) => Promise<void>;
   removeDevice: (id: string) => Promise<void>;
 };
 
-export type HomeState = HomeActions & {
-  items: HistoryItem[];
-  devices: DeviceDTO[];
-  lastAddedDevice: DeviceDTO | null;
-  maxEnvelopeBytes: number;
-  loading: boolean;
-  loadingMore: boolean;
-  nextBefore: string | null;
-  error: string | null;
-  live: string;
-  offline: boolean;
-};
+export type HomeState = HomeActions &
+  FileActions & {
+    items: HistoryItem[];
+    devices: DeviceDTO[];
+    lastAddedDevice: DeviceDTO | null;
+    maxEnvelopeBytes: number;
+    loading: boolean;
+    loadingMore: boolean;
+    nextBefore: string | null;
+    error: string | null;
+    live: string;
+    offline: boolean;
+  };
 
 export function useHome(
   api: ApiClient,
@@ -51,6 +53,8 @@ export function useHome(
   historyRef.current = history;
   const [deviceState, dispatchDevice] = useReducer(deviceReducer, emptyDevices);
   const [maxEnvelopeBytes, setMaxEnvelopeBytes] = useState(0);
+  const [maxFileBytes, setMaxFileBytes] = useState(0);
+  const [uploadMode, setUploadMode] = useState<UploadMode>("direct");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
@@ -64,9 +68,9 @@ export function useHome(
       more: async () => {
         await actions.current?.more();
       },
-      send: async (payload, target) => {
+      send: async (payload, target, file) => {
         if (!actions.current) throw new Error("Sign in again before sending.");
-        await actions.current.send(payload, target);
+        await actions.current.send(payload, target, file);
       },
       remove: async (id) => {
         await actions.current?.remove(id);
@@ -143,6 +147,8 @@ export function useHome(
           dispatch({ type: "replace", items, startedWith });
           dispatchDevice({ type: "replace", devices: listed.devices });
           setMaxEnvelopeBytes(me.limits.maxEnvelopeBytes);
+          setMaxFileBytes(me.limits.maxFileBytes);
+          setUploadMode(me.uploadMode);
           before = page.nextBefore;
           setNextBefore(before);
           setError(null);
@@ -224,7 +230,7 @@ export function useHome(
           if (active) setLoadingMore(false);
         }
       },
-      send: async (payload, targetDeviceId) => {
+      send: async (payload, targetDeviceId, file) => {
         const id = uuidv7();
         const envelope = await encryptPush(session.contentKey, id, payload);
         const optimistic: HistoryItem = {
@@ -233,7 +239,7 @@ export function useHome(
           sourceDeviceId: session.deviceId,
           targetDeviceId,
           envelope,
-          file: null,
+          file: file ?? null,
           payload,
           pending: true,
         };
@@ -241,7 +247,7 @@ export function useHome(
         dispatch({ type: "merge", items: [optimistic] });
         try {
           const push = await api.request("createPush", {
-            body: { id, targetDeviceId, envelope, file: null },
+            body: { id, targetDeviceId, envelope, file: file ? { id: file.id } : null },
             signal,
           });
           if (!active) return;
@@ -299,6 +305,16 @@ export function useHome(
     };
   }, [api, session, onUnauthorized]);
 
+  const files = useFiles({
+    api,
+    session,
+    send: methods.send,
+    maxFileBytes,
+    maxEnvelopeBytes,
+    uploadMode,
+    onUnauthorized,
+  });
+
   return {
     items: history.items,
     devices: deviceState.devices,
@@ -311,5 +327,6 @@ export function useHome(
     live,
     offline,
     ...methods,
+    ...files,
   };
 }

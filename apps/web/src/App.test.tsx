@@ -73,7 +73,7 @@ test("setup redirect retains fragment token for the form, then removes it from h
   render(<App />);
   await screen.findByRole("button", { name: "Create instance" });
   expect(window.location.pathname).toBe("/setup");
-  expect(window.location.hash).toBe("");
+  await waitFor(() => expect(window.location.hash).toBe(""));
   expect(screen.queryByRole("alert")).toBeNull();
 });
 

@@ -32,6 +32,7 @@ function renderComposer(
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={65_536}
       onSend={onSend}
+      onFiles={vi.fn()}
       offline={false}
       {...props}
     />,
@@ -127,6 +128,7 @@ test("enforces the exact encrypted envelope boundary before sending", () => {
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={exact - 1}
       onSend={onSend}
+      onFiles={vi.fn()}
       offline={false}
     />,
   );
@@ -173,6 +175,7 @@ test("keeps a draft visible but disables the composer while offline", () => {
       devices={[onlineDevice, offlineDevice]}
       maxEnvelopeBytes={65_536}
       onSend={vi.fn<() => Promise<void>>().mockResolvedValue(undefined)}
+      onFiles={vi.fn()}
       offline
     />,
   );
@@ -180,4 +183,48 @@ test("keeps a draft visible but disables the composer while offline", () => {
   expect(message.value).toBe("Waiting for a connection");
   expect(message.disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("rejects an oversized attachment without losing the caption or allowing a send", () => {
+  renderComposer(undefined, {
+    onFiles: () => {
+      throw new Error("The encrypted file exceeds the 1 MiB file limit");
+    },
+  });
+  const message = screen.getByLabelText("Message") as HTMLTextAreaElement;
+  fireEvent.change(message, { target: { value: "Keep this caption" } });
+  fireEvent.change(screen.getByLabelText("Attach files"), {
+    target: { files: [new File(["content"], "large.bin")] },
+  });
+  expect(screen.getByRole("alert").textContent).toContain("1 MiB file limit");
+  expect(message.value).toBe("Keep this caption");
+});
+
+test("file paste consumes the event but ordinary text paste stays native", () => {
+  renderComposer();
+  const message = screen.getByLabelText("Message") as HTMLTextAreaElement;
+  fireEvent.change(message, { target: { value: "Caption for the picture" } });
+  const plain = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(plain, "clipboardData", { value: { files: [] } });
+  fireEvent(message, plain);
+  expect(plain.defaultPrevented).toBe(false);
+  const picture = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(picture, "clipboardData", {
+    value: { files: [new File(["image"], "picture.png", { type: "image/png" })] },
+  });
+  fireEvent(message, picture);
+  expect(picture.defaultPrevented).toBe(true);
+  expect(message.value).toBe("");
+  expect(document.activeElement).toBe(message);
+});
+
+test("drops prevent browser navigation and explain why files cannot send offline", () => {
+  renderComposer(undefined, { offline: true });
+  const drop = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", {
+    value: { types: ["Files"], files: [new File(["content"], "offline.txt")] },
+  });
+  fireEvent(window, drop);
+  expect(drop.defaultPrevented).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain("Reconnect");
 });

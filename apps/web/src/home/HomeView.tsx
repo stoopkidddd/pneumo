@@ -1,5 +1,6 @@
 import { isUuidv7 } from "@pneumo/protocol";
 import { useEffect, useRef, useState } from "react";
+import { UploadRow } from "../files/FileTransfer.js";
 import { HistoryRow } from "../history/HistoryRow.js";
 import { ErrorNotice } from "../views/fields.js";
 import { Composer } from "./Composer.js";
@@ -80,6 +81,7 @@ export function HomeView({ state }: { state: HomeState }) {
         maxEnvelopeBytes={state.maxEnvelopeBytes}
         offline={state.offline || state.maxEnvelopeBytes === 0}
         onSend={state.send}
+        onFiles={state.sendFiles}
       />
       <section className="history-section" aria-labelledby="history-heading">
         <div className="history-heading">
@@ -103,13 +105,21 @@ export function HomeView({ state }: { state: HomeState }) {
           </div>
         )}
         {loading && <p role="status">Loading history…</p>}
-        {!loading && !error && state.items.length === 0 && (
+        {!loading && !error && state.items.length === 0 && state.uploads.length === 0 && (
           <div className="history-empty">
             <h3>Nothing here yet.</h3>
             <p className="muted">Send yourself something.</p>
           </div>
         )}
         <div className="history-list">
+          {state.uploads.map((item) => (
+            <UploadRow
+              key={item.id}
+              item={item}
+              onCancel={state.cancelUpload}
+              onDismiss={state.dismissUpload}
+            />
+          ))}
           {state.items.map((item) => (
             <HistoryRow
               key={item.id}
@@ -118,6 +128,7 @@ export function HomeView({ state }: { state: HomeState }) {
               highlighted={selected === item.id}
               now={now}
               onDelete={state.remove}
+              onDownload={state.download}
             />
           ))}
         </div>
