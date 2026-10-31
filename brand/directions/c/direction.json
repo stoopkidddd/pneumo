@@ -1,0 +1,39 @@
+{
+  "id": "c",
+  "name": "Air Mail",
+  "pitch": "A pocket-sized dispatch stamp makes every hand-off feel personal.",
+  "tradeoffs": "The warmest and most personal direction, but softer and less immediately legible as a transport tool; the stamp edge must stay bold at small sizes.",
+  "concept": "A soft, ticket-edged dispatch label turns Pneumo's retro office-mail capsule into a personal imprint. Rich plum ink and golden buff recall rubber stamps, routing slips, and well-used stationery without drifting into medical or clinical cues.",
+  "markNotes": "The bold scalloped squircle is a compact dispatch-stamp impression. Its generous negative-space channel begins as a rounded pneumatic capsule and finishes in a rightward delivery cut, explaining a tube-carried hand-off while remaining obvious at 16px.",
+  "typeNotes": "Bree Serif gives the lowercase pneumo wordmark warm, inked authority and distinctive soft serifs. Nunito Sans 600 keeps interface copy friendly, compact, and highly legible without copying the mark's retro character.",
+  "display": {
+    "family": "Bree Serif",
+    "file": "fonts/display.woff2",
+    "weight": 400
+  },
+  "ui": {
+    "family": "Nunito Sans",
+    "file": "fonts/ui.woff2",
+    "weight": 600
+  },
+  "palette": {
+    "light": {
+      "canvas": "#F5DFAD",
+      "surface": "#FFF8E8",
+      "ink": "#35162F",
+      "muted": "#6B3C5E",
+      "accent": "#6B1F52",
+      "onAccent": "#FFF3CC",
+      "outline": "#8B5D6F"
+    },
+    "dark": {
+      "canvas": "#21141F",
+      "surface": "#2D1A2A",
+      "ink": "#FFF0C9",
+      "muted": "#D7B99E",
+      "accent": "#F3C15C",
+      "onAccent": "#35162F",
+      "outline": "#A9848F"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "a",
+  "name": "Dispatch",
+  "pitch": "A ribbed mail capsule with a little forward lean. Built to get things there.",
+  "tradeoffs": "The most literal connection to pneumatic mail, with sturdy condensed lettering and equipment-red controls. It feels purposeful before it feels decorative. The motion bars are supporting detail, not the identity; at small sizes the carrier’s ribs do the work. More industrial than cozy, and the red must remain a brand action color, not an error signal.",
+  "concept": "Enamel-painted mailroom equipment, stamped destination labels, a carrier already on its way.",
+  "markNotes": "A broad, ribbed tube carrier leans into its journey. Two short motion bars distinguish a mailroom object from a medicine capsule. One-color geometry; no lighting effects or fine outlines.",
+  "typeNotes": "Barlow Condensed 600 has the compact authority of equipment lettering. Barlow 400 keeps notes and controls open and easy to scan. The wordmark is outlined; the UI specimens use the bundled fonts.",
+  "display": { "family": "Barlow Condensed", "file": "fonts/display.woff2", "weight": 600 },
+  "ui": { "family": "Barlow", "file": "fonts/ui.woff2", "weight": 400 },
+  "palette": {
+    "light": { "canvas": "#F1F0EB", "surface": "#FFFFFF", "ink": "#242622", "muted": "#575B53", "accent": "#AF321B", "onAccent": "#FFFFFF", "outline": "#77796F" },
+    "dark": { "canvas": "#20221F", "surface": "#2B2E29", "ink": "#F6F4ED", "muted": "#C0C4B7", "accent": "#FFA58C", "onAccent": "#341307", "outline": "#92988A" }
+  }
+}

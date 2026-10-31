@@ -1,0 +1,39 @@
+{
+  "id": "b",
+  "name": "Switchboard",
+  "pitch": "A continuous tube becomes a compact P: precise routing for your personal devices.",
+  "tradeoffs": "More infrastructural and less overtly playful than the other directions; the P monogram can need the wordmark before the Pneumo name becomes familiar.",
+  "concept": "A 1970s wayfinding system translated into a personal-device switchboard: cool cobalt carries the active route while concrete neutrals make the system feel tactile, ordered, and dependable.",
+  "markNotes": "A single chunky route folds through squared switchboard corners into a P. Its stepped outer turn and open counter stay distinct at 16px without becoming an arrow, chain link, or medical symbol.",
+  "typeNotes": "Chivo SemiBold gives the lowercase wordmark compact geometric authority and slightly industrial terminals. Public Sans keeps interface copy calm, highly legible, and secondary to the routing graphic.",
+  "display": {
+    "family": "Chivo",
+    "file": "fonts/display.woff2",
+    "weight": 600
+  },
+  "ui": {
+    "family": "Public Sans",
+    "file": "fonts/ui.woff2",
+    "weight": 400
+  },
+  "palette": {
+    "light": {
+      "canvas": "#F2F3F5",
+      "surface": "#FFFFFF",
+      "ink": "#151922",
+      "muted": "#4E5665",
+      "accent": "#1947C7",
+      "onAccent": "#FFFFFF",
+      "outline": "#737B89"
+    },
+    "dark": {
+      "canvas": "#10141C",
+      "surface": "#1A202B",
+      "ink": "#F4F6FA",
+      "muted": "#B5BDCB",
+      "accent": "#8CA9FF",
+      "onAccent": "#111831",
+      "outline": "#707B8E"
+    }
+  }
+}
