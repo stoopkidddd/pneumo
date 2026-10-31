@@ -2,6 +2,11 @@
 set -euo pipefail
 
 if [[ "$(uname -sm)" == "Linux x86_64" && -d /nix/store ]]; then
+  # Sanitized server subprocesses omit HOME; AWS SDK config still calls os.homedir().
+  if [[ ! -e /etc/passwd ]]; then
+    mkdir -p /etc
+    printf 'nixery:x:%s:%s:Nixery:%s:/bin/sh\n' "$(id -u)" "$(id -g)" "${HOME:-/tmp}" > /etc/passwd
+  fi
   # npm executables expect the FHS loader; Nix binaries encode a store path instead.
   runtime=$(command -v node || command -v bash)
   runtime=$(readlink -f "$runtime")

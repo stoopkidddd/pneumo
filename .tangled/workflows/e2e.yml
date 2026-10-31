@@ -1,0 +1,72 @@
+when:
+  # PR paths filters do not match on this spindle; run every PR.
+  - event: pull_request
+    branch: main
+  - event: push
+    branch: main
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - "packages/protocol/**"
+      - "packages/crypto/**"
+      - "scripts/e2e/**"
+      - "scripts/pneumo-dev.ts"
+      - "scripts/pneumo-dev/**"
+      - "scripts/ci/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "mise.toml"
+      - ".tangled/workflows/**"
+      - "docs/agents/tangled.md"
+
+# Share the Nix dependency install and frozen pnpm install across both suites.
+engine: nixery
+dependencies:
+  nixpkgs/nixpkgs-unstable: [nodejs_26, pnpm_11, bash, coreutils, gnused, gnugrep, findutils, which, gawk, git, gnutar, zstd, patchelf, glibc, gcc-unwrapped.lib]
+  # Playwright 1.64.1 / Chromium 1248, matching the lockfile; omit unused Firefox/WebKit.
+  nixpkgs/885ba4d038f10c3d17d7a92e8c3cc185b99c9158: [playwright-driver.components.chromium, playwright-driver.components.chromium-headless-shell]
+  # Test-only, loopback MinIO: unstable refuses this upstream-abandoned package.
+  # See the security limitation and pin provenance in docs/agents/tangled.md.
+  nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d: [minio, minio-client]
+environment:
+  PNPM_HOME: /tangled/workspace/.pnpm
+  CI: "true"
+  PNEUMO_E2E_MINIO: native
+cache:
+  - key: pnpm-e2e
+    paths: [.pnpm-store, .pnpm]
+    hash: [pnpm-lock.yaml]
+    fallback: true
+steps:
+  - name: Install locked dependencies
+    command: |
+      bash scripts/ci/run-nixery.sh bash -euc '
+        node --version
+        pnpm --version
+        minio --version
+        mc --version
+        pnpm install --frozen-lockfile --store-dir .pnpm-store
+      '
+  - name: e2e:server
+    command: bash scripts/ci/run-nixery.sh pnpm --filter @pneumo/server test:e2e
+  - name: e2e:web
+    command: |
+      bash scripts/ci/run-nixery.sh bash -euc '
+        export PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright-browsers"
+        mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+        for component in chromium chromium-headless-shell; do
+          set -- /nix/store/*-playwright-"$component"
+          test "$#" -eq 1
+          test -d "$1"
+          ln -sfn "$1" "$PLAYWRIGHT_BROWSERS_PATH/${component//-/_}-1248"
+        done
+        # Full Chromium sets this itself; the headless shell does not.
+        set -- /nix/store/*-fonts.conf
+        test "$#" -eq 1
+        export FONTCONFIG_FILE="$1"
+        test -f "$FONTCONFIG_FILE"
+        pnpm --filter @pneumo/web exec playwright --version
+        pnpm --filter @pneumo/web test:e2e --workers=2
+      '

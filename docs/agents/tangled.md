@@ -253,7 +253,7 @@ The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ## CI coverage table
 
-ENG-277 adds three `nixery` workflows, triggered on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all three workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
+The lane workflows and ENG-278's `e2e.yml` trigger on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all configured workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
 
 | Lane | CI or local-only | Workflow / reason | Hosted duration (2026-10-31) |
 | -- | -- | -- | -- |
@@ -263,6 +263,10 @@ ENG-277 adds three `nixery` workflows, triggered on `push` to `main` and `pull_r
 | pneumo-android | **local-only** (full lane); static subset in CI | `android.yml`: only `spotlessCheck detekt`. The hosted spindle has no Android SDK (37.2 / build-tools 37.0.0), so lint, JVM tests and screenshots stay local. Run `mise run check:android` before merging any Android change. | workflow 51 s (Gradle step 41 s, including the Gradle 9.8.2 download) |
 | pneumo-infra | CI | `infra.yml`: full `check:infra`; Compose config needs a client, not a Docker daemon | step 3 s |
 | pneumo-brand | CI | `infra.yml`: full `check:brand`, after infra; all generated outputs matched git on the hosted Linux runner | step 2 s |
+| e2e:server | CI configured; **hosted verification pending** | `e2e.yml`: full server MinIO integration and dev-client smoke suites, native MinIO | Not yet measured on the spindle |
+| e2e:web | CI configured; **hosted verification pending** | `e2e.yml`: full Playwright suite, including PWA specs, with native MinIO and pinned Chromium; two workers, no exclusions | Not yet measured on the spindle |
+| e2e:docker | **local-only** | microVM Docker is available, but the cold image build plus direct/proxy smoke does not fit the conservative queue-inclusive budget below; run `mise run e2e:docker` before merging Docker/runtime changes | No hosted suite run; engine probe alone was 29 s |
+| e2e:android | **local-only** | Requires the Android SDK and a managed-device emulator; run `mise run e2e:android` locally, one emulator suite at a time | No hosted emulator |
 
 Measured on PR #9 (first green hosted run, `986b257`, pnpm and Gradle caches empty):
 
@@ -287,6 +291,53 @@ Warm run on PR #9 (`c67c791`, pnpm and Gradle caches restored; pnpm reused 129 p
 **CI can fail (proven):** `37db504` added a test that fails on purpose (`apps/server/src/ci-red.test.ts`). `ts.yml` failed at `check:server` with exit 1, and `infra.yml` and `android.yml` passed. The next round dropped that commit and the pipeline went green again.
 
 **Log viewer quirk:** the hosted log for a Node check step can show only its first output line (for example Biome's `Checked … files`) and not vitest's results. Read the step status (Passed/Failed, exit code) rather than looking for test counts.
+
+### e2e package pins (ENG-278)
+
+`e2e.yml` shares one Nix dependency install and one frozen pnpm install between `e2e:server` and `e2e:web`. Both use `PNEUMO_E2E_MINIO=native`, with isolated stores and random server/MinIO ports. Every step uses `scripts/ci/run-nixery.sh`, just like the existing Node workflows. Web uses two workers; no test source, retry policy or assertion is changed.
+
+The browser pin is nixpkgs **`885ba4d038f10c3d17d7a92e8c3cc185b99c9158`**, the revision published by [nixpkgs-unstable](https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1105041.885ba4d038f1/git-revision). Its driver is **1.64.1**, matching `@playwright/test` in `pnpm-lock.yaml`, and both Chromium variants have revision **1248**, Chrome **156.0.8078.4**. The preferred full `playwright-driver.browsers` package needed **818.2 MiB of downloads / 2.2 GiB unpacked** in the local cold probe, including unused Firefox, WebKit and multimedia dependencies. To leave queue headroom, CI selects only `playwright-driver.components.chromium` and `playwright-driver.components.chromium-headless-shell` from that same pin. It links them into a workspace browser directory and sets `PLAYWRIGHT_BROWSERS_PATH` in the web step. Full Chromium remains available for persistent PWA profiles; this is not a different system browser or a test change. Update both the nixpkgs pin and the workflow's `1248` directory suffix together with the lockfile's Playwright version.
+
+The selected Chromium components needed **361.8 MiB / 956.1 MiB unpacked**, installed in **40.43 s** in the cold emulated Nixery probe. No FFmpeg package is needed with the suite's video recording disabled.
+
+The web step also exports the pinned package's `FONTCONFIG_FILE`. Nix wraps full Chromium with that default, but not the headless shell. Native Linux reproduced a missing-fontconfig Skia crash (`SkFontMgr_FontConfigInterface.cpp:163`) in 36 tests while all six full-Chromium PWA tests passed. Supplying the same Nix font configuration made the complete **42/42** suite pass; no browser flags, assertions or test files changed.
+
+Public Nixery's default revision instead supplied Playwright **1.63.0**. Its tags do not select a different nixpkgs revision: the `nixos-25.05` tag still evaluated the default packages. Local reproduction therefore installs the two pinned package sets with Nix inside a public Nixery toolchain container; it is not an exact reproduction of the hosted dependency installer.
+
+**MinIO security limitation:** public Nixery refuses unstable's `minio-2025-10-15T17-29-55Z` because upstream abandoned it with known vulnerabilities, including unauthenticated object writes. Only the e2e fixture uses `minio` and `minio-client` from nixpkgs **`ac62194c3917d5f474c1a844b6fd6da2db95077d`**, the final [NixOS 25.05 revision](https://releases.nixos.org/nixos/25.05/nixos-25.05.813814.ac62194c3917/git-revision), before that insecure-package refusal. This still contains the vulnerable MinIO release, not a security fix. The harness binds it and its console to loopback, uses disposable data and fixture credentials, and tears it down. Never use this pin for a production store or expose the fixture to untrusted clients. No global `allowInsecure` switch is enabled.
+
+The e2e cache stores `.pnpm-store` and `.pnpm`, hashed by `pnpm-lock.yaml`, with fallback restore. There is no downloaded-browser cache: the pinned Nix package supplies the browsers. Nix dependency download/install remains uncached by workflow `cache:` entries.
+
+The first pinned Linux server run passed 13/17 tests: bundled runtime and CLI subprocesses failed before startup. A sanitized child running `os.homedir()` reproduced `uv_os_homedir returned ENOENT`: public Nixery has no `/etc/passwd`, and these subprocesses intentionally omit `HOME`. `run-nixery.sh` now creates a current-UID passwd entry only when that file is absent. The same sanitized lookup then succeeded and all **17/17** server tests passed. Existing passwd files and non-Nix hosts are unchanged; tests do not inherit extra environment variables.
+
+### e2e scheduling budget
+
+Assume the new workflow is **fourth**, behind all three existing workflows: **2 m 24 s warm / 2 m 35 s cold** queued before it starts. File-name ordering is not a scheduling guarantee. Combining server and web avoids another approximately 25 s Nix setup plus a second pnpm install; splitting them would increase the last workflow's queue-inclusive duration.
+
+**[INFERENCE] First-hosted-run estimates:** allow **105 s warm / 150 s cold** for the combined e2e workflow: 25 s warm / 60 s cold Nix setup, 5 s warm / 15 s cold pnpm install, 12 s server, 58 s web and 5 s clone/cache overhead. The native Linux arm64 probes measured **11.23 s server / 57.39 s web**, with a **14.2 s** cold pnpm install; these are inputs to the estimates, not hosted durations. At worst queue position four, estimated pipeline completion is **249 s warm / 305 s cold**, leaving **86 s / 30 s** against the conservative 335 s budget. Cold headroom is narrow and package/download speed is runner-dependent. The lead must replace these estimates with cold and warm hosted totals, including queued time; if they do not fit, keep the affected suite local-only rather than weakening tests.
+
+Use **5 m 35 s** as a conservative planning budget, not a measured hard timeout. Docker's engine is available, but a separate cold `linux/amd64` BuildKit builder took **269.88 s** for the unchanged full `e2e:docker` suite, including image builds, both upload modes, runtime health, web assets, non-root UID, encrypted file transfer and clean SIGTERM. Adding only the measured **29 s** microVM overhead and the existing warm queue already gives **442.88 s (7 m 23 s)**, before the new e2e workflow or a Docker workflow's Node/pnpm setup. That is not a safe cold fit. The initial arm64 run with existing base-image/build cache took **70.02 s**, which must not be mistaken for a cold hosted duration. Docker stays local-only; tests were not shortened.
+
+These Docker timings are local, with amd64 emulation for the cold run, not evidence of the spindle's native execution speed or actual timeout. Revisit Docker CI only with a larger confirmed queue-inclusive allowance or pipeline isolation; engine support alone is insufficient.
+
+### ENG-278 local evidence and hosted handoff
+
+| Local check | Result |
+| -- | -- |
+| `PNEUMO_E2E_MINIO=native mise run e2e:server` on macOS | Exit 0; 17/17 tests; 9.23 s wall |
+| `PNEUMO_E2E_MINIO=native mise run e2e:web` on macOS | Exit 0; 42/42 tests, including PWA; 27.16 s wall with six workers |
+| Same native web command with `CI=true` and `--workers=2` | Exit 0; 42/42 tests; 45.46 s wall |
+| Public Nixery `linux/amd64`, pinned native MinIO, corrected runtime wrapper | Exit 0; 17/17 server tests; 48.86 s command wall |
+| Exact web workflow step in that emulated container | Timed out after 900 s, not green. Chromium crashed before app interaction; a launch-only probe reproduced Rosetta's `ThreadContextFcntl.cpp:85 create_tempfile` assertion and SIGTRAP. This is not a measurement of a native hosted web run. |
+| Native Linux arm64 Nixery, Node 26.13.0 / pnpm 11.28.10, same pinned MinIO/Chromium | Exit 0 for both exact YAML suite commands: 17/17 server tests in 11.23 s command wall; 42/42 web tests in 57.39 s command wall, including PWA and the update spec |
+| `mise run check:infra` | Exit 0; hadolint, shellcheck, Biome, types and all four workflow schemas passed |
+| `mise run e2e:docker` with a cold amd64 builder | Exit 0; 269.88 s; both upload modes, version/health/assets/non-root checks and cleanup passed |
+
+The arm64 probe used `nixery.dev/arm64/shell/nix`, installing the toolchain and browser components from `885ba4d038f10c3d17d7a92e8c3cc185b99c9158` and MinIO from `ac62194c3917d5f474c1a844b6fd6da2db95077d`, in separate temporary Nix profiles. It supplied the same passwd entry manually because the production wrapper targets the hosted x86-64 runner. Nix sandbox/syscall filtering was disabled only for the disposable local Nix builder, not in the workflow. This verifies native Linux browser packaging and the unchanged full suite without Rosetta, but is not hosted amd64 or queue/timeout proof.
+
+The implementer cannot access hosted CI. The lead must push the branch, open/resubmit the PR, and check that both e2e steps pass. Record cold and warm workflow totals **including their queue position** before marking these rows confirmed CI. The public Nixery revision and local emulation differ from the hosted runner.
+
+PWA remains included: the full native Mac and Linux arm64 suites passed, but Chromium push subscriptions require outbound FCM access. If the hosted run proves that unavailable, exclude the affected PWA specs **only in the CI command**, leave tests unchanged, and mark that subset local-only with the observed reason. Do not infer a hosted network failure from the Rosetta crash.
 
 ### Reproduce CI locally in Nixery
 
@@ -372,7 +423,7 @@ Use `--rm` for containers. Remove the disposable copies afterward, and remove on
 * `scripts/ci/check.sh` owns the lane commands; mise tasks and workflows call the same wrapper. CI additionally wraps every step in `scripts/ci/run-nixery.sh` for its loader, native-library and Java environment. Every existing task and the root `check` dependency list remain intact. No workflow runs `mise install` or requires mise.
 * TS and infra use the documented `nixpkgs/nixpkgs-unstable` registry syntax with `nodejs_26` and `pnpm_11`. PR #9 confirmed Node 26.13.0. Node's major matches mise; its exact patch depends on the runner's nixpkgs revision and is printed in the install step.
 * [Upstream `pnpm_11`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/pnpm/default.nix) currently supplies 11.27.0, versus the repo's 11.28.10. Keep package-manager version management enabled: both the hosted run and public Nixery containers selected 11.28.10 and installed the lockfile. `PNPM_HOME` remains inside the cached workspace so the selected version survives fresh Nixery step containers.
-* Every pnpm/Gradle workflow explicitly includes bash, coreutils, gnused, gnugrep, findutils, which and gawk. coreutils supplies the shim's `readlink`/`dirname`/`uname`; gnused supplies `sed`. TS also includes `python3` for the vector cross-check. Infra includes git for brand comparisons, `docker-client` (with Compose), shellcheck, and hadolint. There is currently no Dockerfile to lint or build; Docker build checks belong to the Dockerfile issue, not ENG-277.
+* Every pnpm/Gradle workflow explicitly includes bash, coreutils, gnused, gnugrep, findutils, which and gawk. coreutils supplies the shim's `readlink`/`dirname`/`uname`; gnused supplies `sed`. TS also includes `python3` for the vector cross-check. Infra includes git for brand comparisons, `docker-client` (with Compose), shellcheck, and hadolint. ENG-277 preceded the Dockerfile; `check:infra` now also runs `hadolint Dockerfile`. Image builds and runtime health checks belong to `e2e:docker`, not `check:infra`.
 * Android requests `jdk17_headless`, sets `JAVA_HOME=/lib/openjdk`, and uses curl/unzip plus the common `xargs`/`sed` launcher utilities. The Nixery wrapper exports the JDK bin directory on `PATH`. Its explicitly workspace-backed `GRADLE_USER_HOME` is not a temporary directory. Only Gradle's `caches` and `wrapper` directories are archived.
 * pnpm caches `.pnpm-store` and `.pnpm`, hashed by `pnpm-lock.yaml`. Gradle hashes `apps/android/gradle/libs.versions.toml` and `apps/android/gradle/wrapper/gradle-wrapper.properties`. All entries use `fallback: true`; every image includes `gnutar` and `zstd` for cache archives.
 * `check:infra` parses workflow YAML with `scripts/ci/validate-workflows.ts`. It checks common, trigger/schedule, clone, cache, step and engine-specific key lists from the [Tangled workflow reference](https://tangled.org/docs/spindles/workflows/), including the differing dependency shapes. Registry names, environment variable names and NixOS option maps remain open-ended. This is a supported-key check, not a replacement for spindle validation.
@@ -397,8 +448,9 @@ Use `--rm` for containers. Remove the disposable copies afterward, and remove on
 | Merging applies the patch as new commits, so commit IDs on `main` differ from the branch. | Delete the source branch after merging. |
 | Each workflow file has exactly one engine. | Use two files to test two engines. |
 | The spindle rejects unknown workflow keys. | Use the workflow validation report. |
-| paths filters don't match on pull_request; every PR runs all three workflows. | Omit `paths` from PR conditions; keep a separate path-filtered `push` condition. |
+| paths filters don't match on pull_request; every PR runs all configured workflows. | Omit `paths` from PR conditions; keep a separate path-filtered `push` condition. |
 | A non-main push with `-o verbose-ci` reports `workflow skipped: didn't match trigger push` for every workflow. | Expected: these files parse, but only pushes to `main` trigger them. Resubmit PR #9 to exercise the PR conditions. |
 | Nixery lacks the FHS ELF interpreter requested by npm's native executables. | Wrap each step with `run-nixery.sh` and include `patchelf`, `glibc`, and `gcc-unwrapped.lib`; `ENOENT` does not necessarily mean the binary is absent. |
+| Nixery may omit `/etc/passwd`; sanitized children without `HOME` then fail in `os.homedir()`. | The runtime wrapper supplies a current-UID entry only when the file is absent. |
 | Nixery's JDK is under `/lib/openjdk`, off the default `PATH`. | Set `JAVA_HOME=/lib/openjdk`; the Nixery wrapper prepends its bin directory. |
 | `nixery` steps have no Docker. | Use `microvm`, `image: nixos`, and `virtualisation.docker: true` for Docker. |
