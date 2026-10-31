@@ -73,6 +73,10 @@ configured limits, measure serialized envelopes in UTF-8 bytes, and return 413.
 
 ## Fixtures and verification
 
+Install from the workspace root with `mise exec -- pnpm install --frozen-lockfile`.
+The workspace `allowBuilds` policy approves only `esbuild`, required by the
+`tsx` fixture runner; other dependency build scripts remain unapproved.
+
 ```sh
 pnpm --filter @pneumo/protocol fixtures:generate
 mise run check:protocol
