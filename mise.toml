@@ -24,6 +24,10 @@ run = "bash scripts/ci/check.sh server"
 description = "Run the server MinIO integration suite"
 run = "pnpm --filter @pneumo/server test:e2e"
 
+[tasks."e2e:web"]
+description = "Run the isolated browser end-to-end suite"
+run = "pnpm --filter @pneumo/web test:e2e"
+
 [tasks."check:web"]
 description = "Check web formatting, lint, types, tests and production build"
 run = "bash scripts/ci/check.sh web"

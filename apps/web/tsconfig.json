@@ -5,8 +5,8 @@
     "types": ["vite/client", "node"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx"
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "playwright.config.ts", "e2e"]
 }
