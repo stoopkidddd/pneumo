@@ -1,0 +1,9 @@
+{
+  "name": "@pneumo/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.build.json"
+  }
+}
