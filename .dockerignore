@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+apps/android
+.git
+.claude
+.orca
+**/.env*
+!**/.env.example
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+**/*.log
+.DS_Store

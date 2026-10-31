@@ -31,18 +31,26 @@ services:
     command:
       - mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && mc mb --ignore-existing local/pneumo
 
-  # Enable after the Dockerfile issue lands:
-  # server:
-  #   profiles: ["server"]
-  #   build: .
-  #   env_file: .env.local
-  #   environment:
-  #     S3_ENDPOINT: http://minio:9000
-  #   ports:
-  #     - "127.0.0.1:8080:8080"
-  #   depends_on:
-  #     minio-init:
-  #       condition: service_completed_successfully
+  server:
+    profiles: ["server"]
+    build: .
+    environment:
+      PORT: "8080"
+      PUBLIC_URL: http://localhost:8080
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: pneumo
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      S3_REGION: us-east-1
+      # Browsers on the host cannot resolve the Compose-only MinIO hostname.
+      UPLOAD_MODE: proxy
+      PNEUMO_SETUP_TOKEN: dev-setup-token
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
 
 volumes:
   minio-data:

@@ -68,7 +68,7 @@ brand/                  logo and icon sources, exports, DESIGN.md, tokens.json
 scripts/                dev client CLI, asset generation, e2e harness
 docs/SPEC.md            this spec
 docs/adr/NNNN-*.md      decisions made during the build
-mise.toml  pnpm-workspace.yaml  biome.json  tsconfig.base.json  Dockerfile  docker-compose.yml  railway.json  .tangled/workflows/
+mise.toml  pnpm-workspace.yaml  biome.json  tsconfig.base.json  Dockerfile  docker-compose.yml  .tangled/workflows/
 CLAUDE.md               agent conventions for this repo (AGENTS.md is a symlink to it)
 docs/agents/tangled.md  the proven PR, review-round, merge and CI commands for Tangled
 ```
@@ -554,7 +554,7 @@ Pair, Confirm, Onboarding, Home (history and composer), Devices (list, rename, r
 * Project `pneumo`, with a Bucket `pneumo-files` in the region closest to the owner.
 * Service `pneumo`, built from the GitHub mirror's Dockerfile (Railway can't deploy from Tangled). The mirror's `main` moves only on releases, so production redeploys only on releases.
 * Variables per §12.3, using bucket references. Healthcheck `/api/health`. Replicas 1. A public domain.
-* `railway.json` holds the build and deploy config (config as code).
+* Railway deploy settings are applied through Infrastructure as Code by the lead and set in the template, not read from `railway.json`; see [ADR 0001](adr/0001-railway-deploy-config.md).
 * A `staging` environment, which gets its own bucket instance, is used for smoke and deploy-overlap tests, so the production instance stays uninitialized until the owner sets it up.
 
 ### 16.4 Tangled, CI and the GitHub mirror
@@ -601,7 +601,7 @@ Semver. The server reports its version from `package.json`. The Android `version
 ## 18. Verify at implementation time
 
 1. Railway Buckets (Tigris) accept `PutBucketCors` and presigned PUTs with a signed Content-Length. If not, use proxy mode (already specified). Check this in the staging deploy.
-2. Railway deploy overlap: confirm that the 30-second re-list (§12.2) catches pushes written by the old instance. Look at the overlap and draining settings in `railway.json`.
+2. Railway deploy overlap: confirm that the 30-second re-list (§12.2) catches pushes written by the old instance. Overlap and draining are Railway service settings applied per [ADR 0001](adr/0001-railway-deploy-config.md).
 3. The `remoteMessaging` foreground-service type works on Android 14–16 at the latest targetSdk, and the owner's phone does not kill it (real-device soak in M5).
 4. WebCrypto in service workers, and storing a `CryptoKey` in IndexedDB, on current Chrome and Firefox.
 5. Node 26: compile to `dist` by default rather than relying on type stripping in production.
