@@ -281,6 +281,18 @@ const fixtureDefinitions = {
       "file-size-must-be-nonnegative": { ...pushDto, file: { ...fileReference, size: -1 } },
     },
   },
+  WebPushPayload: {
+    valid: {
+      push: { t: "push", push: pushDto },
+      ref: { t: "ref", id: PUSH_ID },
+    },
+    invalid: {
+      "push-required": { t: "push" },
+      "id-must-be-uuidv7": { t: "ref", id: "push-1" },
+      "known-discriminator-required": { t: "note", push: pushDto },
+      "discriminator-required": { id: PUSH_ID },
+    },
+  },
   Limits: {
     valid: { default: limits },
     invalid: {

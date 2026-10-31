@@ -105,6 +105,11 @@ export const PushRecord = z.object({
 export type PushRecord = z.infer<typeof PushRecord>;
 export const PushDTO = PushRecord.omit({ v: true });
 export type PushDTO = z.infer<typeof PushDTO>;
+export const WebPushPayload = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("push"), push: PushDTO }),
+  z.object({ t: z.literal("ref"), id: Uuidv7 }),
+]);
+export type WebPushPayload = z.infer<typeof WebPushPayload>;
 export const Limits = z.object({ maxFileBytes: byteCount, maxEnvelopeBytes: byteCount });
 export type Limits = z.infer<typeof Limits>;
 export const UploadMode = z.enum(["auto", "direct", "proxy"]);
@@ -192,7 +197,7 @@ export const CreatePushRequest = z.object({
 export type CreatePushRequest = z.infer<typeof CreatePushRequest>;
 export const ListPushesQuery = z.object({
   before: Uuidv7.optional(),
-  limit: z.number().int().min(1).max(100).default(50),
+  limit: z.coerce.number<string | number>().int().min(1).max(100).default(50),
 });
 export type ListPushesQuery = z.infer<typeof ListPushesQuery>;
 export const ListPushesResponse = z.object({
@@ -268,6 +273,7 @@ export const jsonSchemas = {
   DeviceDTO,
   PushRecord,
   PushDTO,
+  WebPushPayload,
   Limits,
   UploadMode,
   ErrorCode,

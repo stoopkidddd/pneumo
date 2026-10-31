@@ -24,6 +24,7 @@ import {
   ServerFrame,
   type SetupRequest,
   Uuidv7,
+  WebPushPayload,
 } from "./schemas.js";
 
 const id = "019a33b0-4200-7000-8000-000000000001";
@@ -173,13 +174,39 @@ test("preserves explicit nulls for history and first WebSocket hello", () => {
   expect(ClientFrame.safeParse({ ...hello, since: undefined }).success).toBe(false);
 });
 
-test("query defaults and boundaries do not coerce malformed values", () => {
+test("query limits accept numeric inputs and enforce the default and boundaries", () => {
   expect(ListPushesQuery.parse({})).toEqual({ limit: 50 });
-  expect(ListPushesQuery.parse({ before: id, limit: 1 })).toEqual({ before: id, limit: 1 });
-  expect(ListPushesQuery.parse({ limit: 100 })).toEqual({ limit: 100 });
-  for (const limit of [0, 101, 1.5, "50", null]) {
+  expect(ListPushesQuery.parse({ before: id, limit: 20 })).toEqual({ before: id, limit: 20 });
+  for (const limit of [1, "1", "20", "50", 100, "100"]) {
+    expect(ListPushesQuery.parse({ limit })).toEqual({ limit: Number(limit) });
+  }
+});
+
+test("query limits reject malformed and out-of-range values", () => {
+  for (const limit of [0, 101, 1.5, "", "abc", "1.5", "0", "101", null]) {
     expect(ListPushesQuery.safeParse({ limit }).success).toBe(false);
   }
+});
+
+test("query parsing accepts URLSearchParams strings including the before cursor", () => {
+  expect(ListPushesQuery.parse(Object.fromEntries(new URLSearchParams("limit=20")))).toEqual({
+    limit: 20,
+  });
+  expect(
+    ListPushesQuery.parse(Object.fromEntries(new URLSearchParams(`limit=20&before=${id}`))),
+  ).toEqual({ limit: 20, before: id });
+  expect(ListPushesQuery.parse(Object.fromEntries(new URLSearchParams(`before=${id}`)))).toEqual({
+    limit: 50,
+    before: id,
+  });
+});
+
+test("Web Push payloads leave the inline size cutoff to the server", () => {
+  const payload = {
+    t: "push",
+    push: { ...PushDTO.parse(push), envelope: { ...envelope, c: "A".repeat(4096) } },
+  };
+  expect(WebPushPayload.parse(payload)).toEqual(payload);
 });
 
 test("file byte sizes are nonnegative safe integers, not fixed to server defaults", () => {
@@ -281,6 +308,9 @@ test("DTOs and frame unions expose the normative TypeScript contract", () => {
         body?: string | undefined;
         file: { name: string; mime: string; size: number; key: string };
       }
+  >();
+  expectTypeOf<WebPushPayload>().toEqualTypeOf<
+    { t: "push"; push: ExpectedPush } | { t: "ref"; id: string }
   >();
   expectTypeOf<ClientFrame>().toEqualTypeOf<
     | {

@@ -57,6 +57,8 @@ const requiredFixturePaths: string[] = [
   "valid/PushRecord--file.json",
   "valid/PushDTO--note.json",
   "valid/PushDTO--file.json",
+  "valid/WebPushPayload--push.json",
+  "valid/WebPushPayload--ref.json",
   "valid/CreatePushRequest--note.json",
   "valid/CreatePushRequest--file.json",
   "valid/MeResponse--auto.json",
