@@ -1,7 +1,5 @@
 package dev.pneumo.app.protocol
 
-import java.net.URI
-import java.net.URISyntaxException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
@@ -10,6 +8,7 @@ import java.time.format.ResolverStyle
 import java.util.Locale
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 private const val BASE64_BLOCK_SIZE = 4
@@ -18,6 +17,7 @@ private const val BASE64_TWO_CHARACTER_REMAINDER = 2
 private const val BASE64_THREE_CHARACTER_REMAINDER = 3
 private val uuidV7Pattern = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 private val base64UrlPattern = Regex("^[A-Za-z0-9_-]*$")
+private val httpUrlPrefixPattern = Regex("^https?://", RegexOption.IGNORE_CASE)
 private val isoTimestampPattern = Regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$")
 private val isoTimestampFormatter: DateTimeFormatter =
     DateTimeFormatterBuilder()
@@ -62,15 +62,9 @@ internal fun requireIsoTimestamp(value: String, name: String) {
 
 internal fun requireHttpUrl(value: String, name: String) {
     require(value.none { it.isWhitespace() }) { "$name must not contain whitespace" }
-    val uri = try {
-        URI(value)
-    } catch (ignored: URISyntaxException) {
-        throw IllegalArgumentException("$name must be an absolute HTTP(S) URL")
-    }
-    require(uri.scheme.equals("http", ignoreCase = true) || uri.scheme.equals("https", ignoreCase = true)) {
-        "$name must use HTTP or HTTPS"
-    }
-    require(!uri.host.isNullOrEmpty()) { "$name must have a hostname" }
+    require(httpUrlPrefixPattern.containsMatchIn(value)) { "$name must use HTTP or HTTPS" }
+    val url = value.toHttpUrlOrNull()
+    require(url != null && url.host.isNotEmpty()) { "$name must be an absolute HTTP(S) URL with a hostname" }
 }
 
 internal fun requireTransferUrl(value: String, name: String) {

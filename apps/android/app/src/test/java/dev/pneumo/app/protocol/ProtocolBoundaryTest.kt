@@ -1,10 +1,13 @@
 package dev.pneumo.app.protocol
 
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private const val VALID_ID = "019a36f0-7b00-7000-8000-000000000001"
@@ -76,6 +79,43 @@ class ProtocolBoundaryTest {
         }
         expectFailure {
             ProtocolJson.decodeFromString(IsoTimestamp.serializer(), "\"2026-10-30T12:00:00.000+00:00\"")
+        }
+    }
+
+    @Test
+    fun linkPayloadUrlsFollowBrowserHttpParsing() {
+        val accepted = listOf(
+            "https://example.com/search?q={foo}",
+            "https://example.com/a|b",
+            "https://example.com/a^b",
+            "https://bücher.de/",
+            "https://my_host.example.com/",
+            "https://example.com/x%zz",
+            "https://example.com/#a#b",
+            "HtTpS://example.com/search?q={foo}"
+        )
+        for (url in accepted) {
+            val json = buildJsonObject {
+                put("type", "link")
+                put("url", url)
+            }
+            val payload = ProtocolJson.decodeFromJsonElement(PushPayload.serializer(), json)
+            assertTrue("Link URL must be preserved", payload is LinkPayload && payload.url == url)
+        }
+        val rejected = listOf(
+            "/relative/path",
+            "ftp://example.com/",
+            "mailto:person@example.com",
+            "https://example.com:99999/",
+            "https://example.com/a b",
+            "https:example.com"
+        )
+        for (url in rejected) {
+            val json = buildJsonObject {
+                put("type", "link")
+                put("url", url)
+            }
+            expectFailure { ProtocolJson.decodeFromJsonElement(PushPayload.serializer(), json) }
         }
     }
 

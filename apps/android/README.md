@@ -78,6 +78,9 @@ Compose Rules version is a compatibility pin, not a lint incompatibility.
   including decrypted payload fields, but keeps required nullable fields required.
   Refinements validate canonical binary encoding, ids, timestamps, URLs and safe
   integer ranges. Only `ListPushesQuery` coerces numeric strings.
+  HTTP(S) URL validation uses OkHttp to accept browser links with Unicode hosts
+  or permissive path/query characters while preserving the original wire string.
+  Whitespace and non-HTTP(S) URLs remain invalid.
 - `net.ApiClient`: suspend APIs for account/pairing, devices, files and pushes.
   JSON reads run on the IO dispatcher. Errors expose `ApiError.code`, `status`
   and `message`; every 401 is `ApiError.Unauthorized`. Bearer credentials go only
