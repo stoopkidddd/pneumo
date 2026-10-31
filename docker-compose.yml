@@ -12,7 +12,9 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_API_CORS_ALLOW_ORIGIN: "*" # Local development only.
     volumes:
-      - minio-data:/bitnami/minio
+      - minio-data:/bitnami/minio/data
+    tmpfs:
+      - /certs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 1s
