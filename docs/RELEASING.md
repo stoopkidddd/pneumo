@@ -25,12 +25,9 @@ releases. See SPEC §16.4–16.8 and `docs/agents/tangled.md`.
 
 ## One-time signing setup (lead only)
 
-Release certificate SHA-256: not recorded.
+Release certificate SHA-256: `0E:FF:DB:A0:E8:59:C6:56:D1:F9:57:E7:92:96:CF:56:0A:B8:DD:B5:04:EF:81:C3:3B:A3:37:09:B2:BD:03:E5`
 
-The real keystore has not been created by ENG-272. The lead must replace the line
-above with `Release certificate SHA-256:` followed by the real 64 hexadecimal
-digits in backticks (colon-separated hexadecimal is also accepted). Without that
-record, normal releases fail closed. Never use the test certificate here.
+The lead created the real keystore on the owner's Mac on 2026-11-01 with the script below. Never replace this fingerprint with a test certificate. A new keystore means a new fingerprint, and every installed APK must then be uninstalled before it can update.
 
 Run this on the owner's Mac once, through the pinned Node and Java tools. It
 creates `~/.config/pneumo/release.jks` (alias `pneumo`, RSA 4096, validity 10000
