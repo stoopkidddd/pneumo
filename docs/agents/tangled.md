@@ -148,7 +148,56 @@ Each run shows workflow status and per-step logs with durations.
 Statuses include **Passed**, **Running**, **Waiting for the spindle** (queued), **Failed**, and `timeout`.
 There is no CLI for pipeline status.
 
-## Hosted spindle
+## Our spindle (since 2026-11-01)
+
+Pneumo's CI runs on our own spindle, `spindle.demi.dev`, not Tangled's hosted one ([ADR 0005](../adr/0005-ci-on-our-own-spindle.md)).
+The hosted spindle denied every `nixery` workflow from 2026-11-01: it asks for 6 GiB per job, over a 4 GiB repo quota (ENG-460).
+
+* **Mill:** Railway project `spindle`. It holds the identity `did:web:spindle.demi.dev`, the queue and the logs.
+* **Executor:** a NixOS VM on the owner's home server. It runs the `nixery` engine on Docker with 4 seats, and dials out to the mill.
+* **Operating it:** see `docs/runbook.md` in [tangled.org/demi.dev/spindle](https://tangled.org/demi.dev/spindle). It covers upgrades, token rotation, backups and outages.
+
+**Settings → Pipelines** selects `spindle.demi.dev`. Switching dropped the CI history that lived on the hosted spindle. Workflow files are unchanged. Retry a pipeline from its page with **Retry**.
+
+### Limits and scheduling
+
+* **Timeout:** 15 minutes per workflow, set by the operator. It counts run time only, so the old "queue-inclusive 5 min" budget no longer applies.
+* **Memory:** 6144 MiB per job, the `nixery` default. The executor never denies a job for its quota.
+* **Concurrency:** 4 seats on 8 vCPU / 16 GB, so up to 4 workflows run at once. Workflows from two PRs share the seats and queue. Under that load, a test with a tight timeout can flake (ENG-497).
+* **Cancel:** the Tangled web UI has no cancel control. Use the spindle's `org.tangled.ci.cancelPipeline` XRPC with a service-auth token from the owner's account; the steps are in the spindle repo's `docs/agents/tangled.md`.
+
+### When the executor is offline
+
+The home server or its network is down:
+
+* new pipelines show **Waiting for the spindle**. The mill queues up to 100 jobs and starts them when the executor reconnects;
+* running jobs fail after the mill's 45 s reconnect grace;
+* a Railway redeploy of the mill doesn't affect this, because executors reconnect on their own.
+
+If the executor stays down and a merge can't wait:
+
+1. Run the lane checks locally.
+2. Say in the PR that CI was unavailable.
+3. Ask the owner first, then merge.
+
+Don't switch back to the hosted spindle while its quota still denies `nixery` jobs.
+
+### First runs (2026-11-01, PRs #34 and #35, round v2)
+
+| Workflow | PR #35 (`6700135`) | PR #34 (`c806eb2`) |
+| -- | -- | -- |
+| `ts.yml` | 3 m 25 s | 3 m 50 s, failed: test timeout under load (ENG-497) |
+| `infra.yml` | 3 m 12 s | 3 m 33 s |
+| `android.yml` | 2 m 57 s | 5 m 18 s |
+| `e2e.yml` | 6 m 34 s | 7 m |
+
+Both pipelines ran at the same time and shared the 4 seats.
+Per-container cgroup `memory.peak` was 2.6 to 3.6 GiB, and two containers reached the 6 GiB cap. That figure includes page cache. The kernel recorded no OOM kills.
+
+## Hosted spindle (history, until 2026-11-01)
+
+Everything below this heading was measured on Tangled's hosted spindle. Its limits no longer apply; keep it for the workflow format findings and quirks.
+
 
 Measured on 2026-10-31, PR #1.
 
@@ -254,6 +303,8 @@ A run that exceeds the limit ends with status `timeout`.
 The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ## CI coverage table
+
+The durations below were measured on the hosted spindle. The local-only choices still stand on our spindle; its 15 m timeout could let `e2e:docker` run in CI, but that is a separate decision.
 
 The lane workflows and ENG-278's `e2e.yml` trigger on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all configured workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
 
