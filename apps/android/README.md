@@ -492,9 +492,10 @@ concurrent device shutdown is treated as an already-completed teardown.
 
 Running `./gradlew pixel6Api34DebugAndroidTest` without harness arguments skips
 only the new real-server case. Test-only dependencies are pinned directly in
-`app/build.gradle.kts`: UiAutomator 2.3.0, Espresso Intents 3.7.0, and AndroidX Test
-Rules 1.7.0. The three scoped `UseTomlInstead` suppressions preserve the issue's
-explicit restriction against editing the shared version catalog.
+`app/build.gradle.kts`: UiAutomator 2.3.0 and Espresso Intents 3.7.0. Espresso
+Intents already supplies AndroidX Test Rules 1.7.0 for `GrantPermissionRule`.
+The two scoped `UseTomlInstead` suppressions preserve the issue's explicit
+restriction against editing the shared version catalog.
 
 **ENG-268 acceptance blocker:** the real 1 MiB download passes MediaStore
 size/SHA-256 verification, but the completed notification retains no Open/Share

@@ -150,6 +150,4 @@ dependencies {
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     //noinspection UseTomlInstead
     androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
-    //noinspection UseTomlInstead
-    androidTestImplementation("androidx.test:rules:1.7.0")
 }
