@@ -602,8 +602,8 @@ Semver. The server reports its version from `package.json`. The Android `version
 
 ## 18. Verify at implementation time
 
-1. Railway Buckets (Tigris) accept `PutBucketCors` and presigned PUTs with a signed Content-Length. If not, use proxy mode (already specified). Check this in the staging deploy.
-2. Railway deploy overlap: confirm that the 30-second re-list (§12.2) catches pushes written by the old instance. Overlap and draining are Railway service settings applied per [ADR 0001](adr/0001-railway-deploy-config.md).
+1. Railway Buckets (Tigris) accept `PutBucketCors` and presigned PUTs with a signed Content-Length. If not, use proxy mode (already specified). Check this in the staging deploy. **Verified on 2026-11-01: they do; Railway resolves to direct uploads ([ADR 0004](adr/0004-railway-staging-verification.md)).**
+2. Railway deploy overlap: confirm that the 30-second re-list (§12.2) catches pushes written by the old instance. Overlap and draining are Railway service settings applied per [ADR 0001](adr/0001-railway-deploy-config.md). **Verified on 2026-11-01: no pushes lost or duplicated across a staging redeploy ([ADR 0004](adr/0004-railway-staging-verification.md)).**
 3. The `remoteMessaging` foreground-service type works on Android 14–16 at the latest targetSdk, and the owner's phone does not kill it (real-device soak in M5).
 4. WebCrypto in service workers, and storing a `CryptoKey` in IndexedDB, on current Chrome and Firefox.
 5. Node 26: compile to `dist` by default rather than relying on type stripping in production.
