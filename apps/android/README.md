@@ -503,20 +503,29 @@ one wall-clock second), and Android shed notification enqueues. The final
 Open/Share replacement was lost even though the downloaded bytes were correct.
 The tagged downloading and terminal posts can each also enqueue a group summary.
 
-Uploads and downloads now use `TransferProgressThrottle`: progress notifications
-require a changed whole percentage and at least 500 ms since the previous
-progress notification. Initial foreground notifications and terminal download
-complete/failure/tamper posts bypass this gate. WorkManager's persisted progress,
-notification ids/tags, and the existing group-summary rules are unchanged. There
-are no deferred notification tasks that can overwrite a terminal state.
+Uploads and downloads share one process-wide `TransferProgressThrottle.Gate`.
+Its synchronized clock check admits at most one changed-percentage progress
+update per second across all transfer instances. WorkManager can enqueue twice
+for a download foreground update (`notify` plus `startForeground`), so a
+per-transfer 500 ms interval was insufficient for overlapping downloads.
+Percentage deduplication remains per transfer; tests inject a shared gate and clock.
 
-JVM tests cover the throttle boundary, repeated percentages, and terminal actions
-after a fast 1 MiB download, tampering, and non-retryable HTTP failure. The exact
-two-run managed-device Verify chain passes with the original Open/Share assertion
-and zero credential matches in each run. The measured post-fix 1 MiB transfer had
-only two initial foreground dispatches, retained all 102 progress-data updates,
-and logged no enqueue-rate shedding. No Android rate-limit setting or fixture
-speed was changed.
+Initial foreground notifications and terminal download complete/failure/tamper
+posts bypass the gate. WorkManager's persisted progress, notification ids/tags,
+and the existing group-summary rules are unchanged. The throttle schedules no
+deferred posts that could overwrite a terminal state.
+
+JVM tests interleave two transfers to check their combined one-second cadence,
+cover repeated/rejected percentages, and verify visible upload progress. A
+download regression records the worker's actual foreground-update calls during
+real file decryption with a virtual clock. It was observed failing with the
+round-1 unthrottled callback and passing after restoring the gate; it also checks
+authenticated bytes and terminal Open/Share while the progress gate is closed.
+Success, tamper, and non-retryable HTTP terminal actions remain covered.
+
+The review-round managed-device smoke passes all 15 tests, including the original
+Open/Share assertion, with zero credential matches and successful teardown.
+No Android rate-limit setting or end-to-end fixture speed was changed.
 
 ### Earlier regular-emulator acceptance
 

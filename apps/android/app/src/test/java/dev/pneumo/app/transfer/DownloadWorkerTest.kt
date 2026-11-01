@@ -2,12 +2,15 @@ package dev.pneumo.app.transfer
 
 import android.Manifest
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.net.Uri
+import androidx.concurrent.futures.CallbackToFutureAdapter
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.Data
+import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
@@ -15,6 +18,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
 import dev.pneumo.app.crypto.Base64Url
 import dev.pneumo.app.crypto.FileCrypto
@@ -30,10 +34,13 @@ import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import okhttp3.ResponseBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -102,6 +109,61 @@ class DownloadWorkerTest {
         assertTrue(destinations.last.bytes.toByteArray().contentEquals(plaintext))
         assertTrue(destinations.last.bulkWrites > 0)
         assertEquals(0, destinations.last.scalarWrites)
+    }
+
+    @Test
+    fun downloadForegroundUpdatesArePacedAndTerminalActionsBypassTheGate() = runTest {
+        var elapsed = 0L
+        val plaintext = ByteArray(1_048_576) { (it * 19).toByte() }
+        val ciphertext = encrypt(plaintext)
+        val stored = push(plaintext.size.toLong(), ciphertext.size.toLong())
+        val gate = TransferProgressThrottle.Gate { elapsed }
+        val updates = mutableListOf<Pair<Long, ForegroundInfo>>()
+        server.enqueue(metadataResponse("/api/files/$FILE_ID/content"))
+        val dependencies = DownloadWorkerDependencies(
+            openSession = {
+                DownloadSession(
+                    deviceId = SESSION_DEVICE_ID,
+                    loadPush = { stored },
+                    getFile = api::getFile,
+                    download = { timedBody(ciphertext) { elapsed += 100L } },
+                    finishSession = { it() }
+                )
+            },
+            destinations = destinations
+        )
+        val worker = TestListenableWorkerBuilder.from(context, DownloadWorker::class.java)
+            .setWorkerFactory(Factory(dependencies, gate))
+            .setInputData(
+                Data.Builder()
+                    .putString(DownloadWorker.INPUT_PUSH_ID, PUSH_ID)
+                    .putString(DownloadWorker.INPUT_SESSION_DEVICE_ID, SESSION_DEVICE_ID)
+                    .build()
+            )
+            .setForegroundUpdater { _, _, info ->
+                updates += elapsed to info
+                CallbackToFutureAdapter.getFuture<Void> { completion ->
+                    completion.set(null)
+                    "recorded download foreground update"
+                }
+            }
+            .build()
+
+        val result = worker.doWork()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertTrue(destinations.last.bytes.toByteArray().contentEquals(plaintext))
+        val progressUpdates = updates.filterNot { (_, info) ->
+            info.notification.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
+        }
+        assertTrue("First progress post must wait for the gate", progressUpdates.first().first in 1_000L..1_199L)
+        assertTrue(
+            "Download foreground updates must be at least one second apart",
+            progressUpdates.zipWithNext().all { (previous, next) -> next.first - previous.first >= 1_000L }
+        )
+        assertTrue(elapsed - progressUpdates.last().first < 1_000L)
+        assertTrue(destinations.last.completed)
+        assertTerminalNotification(listOf("Open", "Share"))
     }
 
     @Test
@@ -285,13 +347,32 @@ class DownloadWorkerTest {
         .setResponseCode(200)
         .setBody(Buffer().write(bytes))
 
-    private class Factory(private val dependencies: DownloadWorkerDependencies) : WorkerFactory() {
+    private fun timedBody(ciphertext: ByteArray, onRead: () -> Unit): ResponseBody {
+        val input = object : ForwardingSource(Buffer().write(ciphertext)) {
+            override fun read(sink: Buffer, byteCount: Long): Long =
+                super.read(sink, byteCount.coerceAtMost(8_192L)).also { count ->
+                    if (count > 0) onRead()
+                }
+        }.buffer()
+        return object : ResponseBody() {
+            override fun contentType() = null
+
+            override fun contentLength(): Long = ciphertext.size.toLong()
+
+            override fun source() = input
+        }
+    }
+
+    private class Factory(
+        private val dependencies: DownloadWorkerDependencies,
+        private val notificationGate: TransferProgressThrottle.Gate = TransferProgressThrottle.Gate()
+    ) : WorkerFactory() {
         override fun createWorker(
             appContext: Context,
             workerClassName: String,
             workerParameters: WorkerParameters
         ): ListenableWorker? = if (workerClassName == DownloadWorker::class.java.name) {
-            DownloadWorker(appContext, workerParameters, dependencies)
+            DownloadWorker(appContext, workerParameters, dependencies, TransferProgressThrottle(notificationGate))
         } else {
             null
         }

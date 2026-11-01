@@ -75,7 +75,8 @@ private class DownloadSpec(
 class DownloadWorker internal constructor(
     appContext: Context,
     params: WorkerParameters,
-    private val dependencies: DownloadWorkerDependencies
+    private val dependencies: DownloadWorkerDependencies,
+    private val notificationProgress: TransferProgressThrottle = TransferProgressThrottle()
 ) : CoroutineWorker(appContext, params) {
     constructor(appContext: Context, params: WorkerParameters) :
         this(appContext, params, DownloadWorkerDependencies.create(appContext))
@@ -234,7 +235,6 @@ class DownloadWorker internal constructor(
         fileKey: ByteArray,
         notifications: DownloadNotifications
     ) = withContext(Dispatchers.IO) {
-        val notificationProgress = TransferProgressThrottle()
         val input = ProgressNetworkInputStream(
             response.byteStream(),
             spec.ciphertextSize,

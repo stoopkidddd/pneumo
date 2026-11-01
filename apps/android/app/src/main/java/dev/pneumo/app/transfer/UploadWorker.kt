@@ -279,10 +279,13 @@ private fun checkedStoredCiphertextSize(item: StoredUploadItem) {
     if (expectedSize != item.ciphertextSize) throw UploadSpoolException()
 }
 
-internal class UploadForeground(private val context: Context, workerHash: Int) {
+internal class UploadForeground(
+    private val context: Context,
+    workerHash: Int,
+    private val notificationProgress: TransferProgressThrottle = TransferProgressThrottle()
+) {
     private val manager = context.getSystemService(NotificationManager::class.java)
     private val notificationId = (workerHash and NOTIFICATION_ID_MASK) + NOTIFICATION_ID_OFFSET
-    private val notificationProgress = TransferProgressThrottle()
 
     init {
         manager.createNotificationChannel(
