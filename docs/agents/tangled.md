@@ -196,7 +196,7 @@ Per-container cgroup `memory.peak` was 2.6 to 3.6 GiB, and two containers reache
 
 ## Hosted spindle (history, until 2026-11-01)
 
-Everything below this heading was measured on Tangled's hosted spindle. Its limits no longer apply; keep it for the workflow format findings and quirks.
+This section, up to the CI coverage table, was measured on Tangled's hosted spindle. Its limits no longer apply; keep it for the workflow format findings and quirks.
 
 
 Measured on 2026-10-31, PR #1.
@@ -304,7 +304,7 @@ The spindle operator sets the timeout. Workflow files have no timeout key.
 
 ## CI coverage table
 
-The durations below were measured on the hosted spindle. The local-only choices still stand on our spindle; its 15 m timeout could let `e2e:docker` run in CI, but that is a separate decision.
+The durations below were measured on the hosted spindle. The local-only choices still stand on our spindle. Our executor can run only `nixery` workflows, which have no Docker; it can't run `microvm` workflows. So `e2e:docker` stays local-only.
 
 The lane workflows and ENG-278's `e2e.yml` trigger on `push` to `main` and `pull_request` targeting `main`. Hosted quirk: paths filters don't match on pull_request; every PR runs all configured workflows. Each workflow therefore has an unfiltered PR condition and a separate path-filtered push condition. A push condition's `paths` is a list of globs, not an `include`/`exclude` map. Shared configuration, CI scripts, workflow files and this document trigger the affected push groups.
 
@@ -318,7 +318,7 @@ The lane workflows and ENG-278's `e2e.yml` trigger on `push` to `main` and `pull
 | pneumo-brand | CI | `infra.yml`: full `check:brand`, after infra; all generated outputs matched git on the hosted Linux runner | step 2 s |
 | e2e:server | CI | `e2e.yml`: full server MinIO integration and dev-client smoke suites, native MinIO; passed on PR #29 cold and warm | step 8 s cold / 10 s warm; exit 0 in both runs |
 | e2e:web | CI | `e2e.yml`: full Playwright suite, including PWA specs, with native MinIO and pinned Chromium; two workers, no exclusions needed on the hosted spindle | step 52 s cold / 52 s warm; exit 0 in both runs |
-| e2e:docker | **local-only** | microVM Docker is available, but the cold image build plus direct/proxy smoke does not fit the conservative queue-inclusive budget below; run `mise run e2e:docker` before merging Docker/runtime changes | No hosted suite run; engine probe alone was 29 s |
+| e2e:docker | **local-only** | Our spindle can't run Docker workflows (`nixery` only). On the hosted spindle, microVM Docker was available, but the cold image build plus direct/proxy smoke does not fit the conservative queue-inclusive budget below; run `mise run e2e:docker` before merging Docker/runtime changes | No hosted suite run; engine probe alone was 29 s |
 | e2e:android | **local-only** | Requires the Android SDK and a managed-device emulator; run `mise run e2e:android` locally, one emulator suite at a time | No hosted emulator |
 
 ### ENG-278 hosted verification (PR #29)
@@ -403,7 +403,7 @@ The initial round-one plan assumed the new workflow would be **fourth**, behind 
 
 **Historical round-one estimates, superseded by the PR #29 measurements above:** **105 s warm / 150 s cold** for the combined e2e workflow: 25 s warm / 60 s cold Nix setup, 5 s warm / 15 s cold pnpm install, 12 s server, 58 s web and 5 s clone/cache overhead. The native Linux arm64 probes measured **11.23 s server / 57.39 s web**, with a **14.2 s** cold pnpm install; these were inputs to the estimates, not hosted durations. At assumed queue position four, estimated pipeline completion was **249 s warm / 305 s cold**, leaving **86 s / 30 s** against the conservative 335 s planning budget. Actual hosted `e2e.yml` totals were **137 s warm / 158 s cold** and complete pipelines were **283 s warm / 378 s cold**, all passed. The larger measured Nix setup costs replace the earlier assumptions; the true timeout and queue position remain unknown.
 
-Round-one planning used **5 m 35 s** as a conservative budget, not a measured hard timeout. Docker's engine is available, but a separate cold `linux/amd64` BuildKit builder took **269.88 s** for the unchanged full `e2e:docker` suite, including image builds, both upload modes, runtime health, web assets, non-root UID, encrypted file transfer and clean SIGTERM. Adding only the measured **29 s** microVM overhead and the earlier warm queue already gives **442.88 s (7 m 23 s)**, before the new e2e workflow or a Docker workflow's Node/pnpm setup. That is not a safe cold fit; the two green PR #29 pipelines do not prove capacity for this additional suite. The initial arm64 run with existing base-image/build cache took **70.02 s**, which must not be mistaken for a cold hosted duration. Docker stays local-only; tests were not shortened.
+Round-one planning used **5 m 35 s** as a conservative budget, not a measured hard timeout. On the hosted spindle, Docker's engine was available, but a separate cold `linux/amd64` BuildKit builder took **269.88 s** for the unchanged full `e2e:docker` suite, including image builds, both upload modes, runtime health, web assets, non-root UID, encrypted file transfer and clean SIGTERM. Adding only the measured **29 s** microVM overhead and the earlier warm queue already gives **442.88 s (7 m 23 s)**, before the new e2e workflow or a Docker workflow's Node/pnpm setup. That is not a safe cold fit; the two green PR #29 pipelines do not prove capacity for this additional suite. The initial arm64 run with existing base-image/build cache took **70.02 s**, which must not be mistaken for a cold hosted duration. Docker stays local-only; tests were not shortened.
 
 These Docker timings are local, with amd64 emulation for the cold run, not evidence of the spindle's native execution speed or actual timeout. Revisit Docker CI only with a larger confirmed queue-inclusive allowance or pipeline isolation; engine support alone is insufficient.
 
@@ -540,4 +540,4 @@ Use `--rm` for containers. Remove the disposable copies afterward, and remove on
 | Nixery lacks the FHS ELF interpreter requested by npm's native executables. | Wrap each step with `run-nixery.sh` and include `patchelf`, `glibc`, and `gcc-unwrapped.lib`; `ENOENT` does not necessarily mean the binary is absent. |
 | Nixery may omit `/etc/passwd`; sanitized children without `HOME` then fail in `os.homedir()`. | The runtime wrapper supplies a current-UID entry only when the file is absent. |
 | Nixery's JDK is under `/lib/openjdk`, off the default `PATH`. | Set `JAVA_HOME=/lib/openjdk`; the Nixery wrapper prepends its bin directory. |
-| `nixery` steps have no Docker. | Use `microvm`, `image: nixos`, and `virtualisation.docker: true` for Docker. |
+| `nixery` steps have no Docker. | Our spindle can't run `microvm` workflows, so Docker suites stay local-only. (On the hosted spindle: `microvm`, `image: nixos`, and `virtualisation.docker: true`.) |
