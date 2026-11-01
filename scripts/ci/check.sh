@@ -41,7 +41,7 @@ case "${1:-}" in
     hadolint Dockerfile
     find scripts -type f -name '*.sh' -exec shellcheck {} +
     pnpm exec biome check --error-on-warnings scripts/
-    pnpm exec tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node scripts/e2e/minio.ts scripts/e2e/docker.ts scripts/ci/validate-workflows.ts
+    pnpm exec tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node scripts/release.ts scripts/e2e/minio.ts scripts/e2e/docker.ts scripts/ci/validate-workflows.ts
     pnpm exec tsx scripts/ci/validate-workflows.ts
     ;;
   *)

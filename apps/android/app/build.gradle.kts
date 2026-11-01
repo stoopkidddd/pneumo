@@ -36,17 +36,48 @@ android {
     }
     buildToolsVersion = "37.0.0"
 
+    val releaseSigningVariables =
+        listOf(
+            "ANDROID_KEYSTORE_PATH",
+            "ANDROID_KEYSTORE_PASSWORD",
+            "ANDROID_KEY_ALIAS",
+            "ANDROID_KEY_PASSWORD"
+        )
+    val releaseSigningEnvironment =
+        releaseSigningVariables.associateWith { providers.environmentVariable(it) }
+    val providedReleaseSigningVariables =
+        releaseSigningEnvironment.filterValues { it.isPresent }.keys
+    check(
+        providedReleaseSigningVariables.isEmpty() ||
+            providedReleaseSigningVariables.size == releaseSigningVariables.size
+    ) {
+        "Release signing requires all of: ${releaseSigningVariables.joinToString()}"
+    }
+
+    signingConfigs {
+        if (providedReleaseSigningVariables.isNotEmpty()) {
+            create("release") {
+                storeFile = file(releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PATH").get())
+                storePassword =
+                    releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PASSWORD").get()
+                keyAlias = releaseSigningEnvironment.getValue("ANDROID_KEY_ALIAS").get()
+                keyPassword = releaseSigningEnvironment.getValue("ANDROID_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "dev.pneumo.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = providers.gradleProperty("releaseVersionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("releaseVersionName").orNull ?: "0.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))

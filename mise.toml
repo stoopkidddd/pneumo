@@ -30,8 +30,12 @@ description = "Run the isolated browser end-to-end suite"
 run = "pnpm --filter @pneumo/web test:e2e"
 
 [tasks."e2e:docker"]
-description = "Build and smoke the container image in direct and proxy upload modes"
+description = "Build and smoke the container image, or smoke an IMAGE override, in direct and proxy upload modes"
 run = "pnpm exec tsx scripts/e2e/docker.ts"
+
+[tasks.release]
+description = "Build and publish a local release; pass <version> [--dry-run]"
+run = "pnpm exec tsx scripts/release.ts"
 
 [tasks."check:web"]
 description = "Check web formatting, lint, types, tests and production build"

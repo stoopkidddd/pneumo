@@ -63,44 +63,72 @@ async function healthy(origin: string): Promise<{ version: string; initialized: 
 }
 
 async function main(): Promise<void> {
+  const suppliedImage = process.env.IMAGE?.trim() || undefined;
+  const usingSuppliedImage = suppliedImage !== undefined;
   const run = randomBytes(12).toString("hex");
   const buildImage = `pneumo-docker-build:${run}`;
   const defaultImage = `pneumo-docker-default:${run}`;
   const network = `pneumo-docker-${run}`;
   const cleanup: (() => Promise<unknown>)[] = [];
+  let size: number;
+  let runtimeImages: Record<"direct" | "proxy", string>;
+  let expectedVersions: Record<"direct" | "proxy", string>;
   try {
     cleanup.push(() => remove("image", buildImage));
     await build(buildImage, "build", version);
-    await build(image, "runtime", version);
-    const imageId = await docker(["image", "inspect", "--format", "{{.Id}}", image]);
-    assert.match(imageId, /^sha256:[a-f0-9]{64}$/u);
-    const size = Number(await docker(["image", "inspect", "--format", "{{.Size}}", imageId]));
-    const label = await docker([
-      "image",
-      "inspect",
-      "--format",
-      '{{index .Config.Labels "org.opencontainers.image.version"}}',
-      imageId,
-    ]);
-    assert.equal(label, version);
-    console.log(`Image size ${size} bytes (${(size / 1_000_000).toFixed(2)} MB)`);
-    console.log(`PASS image version label ${version}`);
+    if (suppliedImage !== undefined) {
+      const imageId = await docker(["image", "inspect", "--format", "{{.Id}}", suppliedImage]);
+      assert.match(imageId, /^sha256:[a-f0-9]{64}$/u);
+      size = Number(await docker(["image", "inspect", "--format", "{{.Size}}", imageId]));
+      const label = await docker([
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "org.opencontainers.image.version"}}',
+        imageId,
+      ]);
+      assert(
+        label.trim() !== "" && label !== "<no value>",
+        "Supplied image must have a nonempty org.opencontainers.image.version label",
+      );
+      runtimeImages = { direct: imageId, proxy: imageId };
+      expectedVersions = { direct: label, proxy: label };
+      console.log(`Image size ${size} bytes (${(size / 1_000_000).toFixed(2)} MB)`);
+      console.log(`PASS supplied image version label ${label}`);
+    } else {
+      await build(image, "runtime", version);
+      const imageId = await docker(["image", "inspect", "--format", "{{.Id}}", image]);
+      assert.match(imageId, /^sha256:[a-f0-9]{64}$/u);
+      size = Number(await docker(["image", "inspect", "--format", "{{.Size}}", imageId]));
+      const label = await docker([
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "org.opencontainers.image.version"}}',
+        imageId,
+      ]);
+      assert.equal(label, version);
+      console.log(`Image size ${size} bytes (${(size / 1_000_000).toFixed(2)} MB)`);
+      console.log(`PASS image version label ${version}`);
 
-    cleanup.push(() => remove("image", defaultImage));
-    await build(defaultImage, "runtime");
-    const { version: packageVersion } = HealthResponse.pick({ version: true }).parse(
-      JSON.parse(
-        await readFile(new URL("../../apps/server/package.json", import.meta.url), "utf8"),
-      ),
-    );
-    const defaultLabel = await docker([
-      "image",
-      "inspect",
-      "--format",
-      '{{index .Config.Labels "org.opencontainers.image.version"}}',
-      defaultImage,
-    ]);
-    assert.equal(defaultLabel, "", "Default build must not claim an explicit version override");
+      cleanup.push(() => remove("image", defaultImage));
+      await build(defaultImage, "runtime");
+      const { version: packageVersion } = HealthResponse.pick({ version: true }).parse(
+        JSON.parse(
+          await readFile(new URL("../../apps/server/package.json", import.meta.url), "utf8"),
+        ),
+      );
+      const defaultLabel = await docker([
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "org.opencontainers.image.version"}}',
+        defaultImage,
+      ]);
+      assert.equal(defaultLabel, "", "Default build must not claim an explicit version override");
+      runtimeImages = { direct: imageId, proxy: defaultImage };
+      expectedVersions = { direct: version, proxy: packageVersion };
+    }
 
     await docker(["network", "create", network]);
     cleanup.push(() => docker(["network", "rm", network]));
@@ -114,8 +142,8 @@ async function main(): Promise<void> {
     await docker(["network", "connect", "--alias", "minio", network, minio.name]);
 
     for (const mode of ["direct", "proxy"] as const) {
-      const runtimeImage = mode === "direct" ? imageId : defaultImage;
-      const expectedVersion = mode === "direct" ? version : packageVersion;
+      const runtimeImage = runtimeImages[mode];
+      const expectedVersion = expectedVersions[mode];
       const server = `pneumo-docker-${run}-${mode}`;
       const client = `${server}-smoke`;
       const env = {
@@ -165,9 +193,9 @@ async function main(): Promise<void> {
       const origin = `http://127.0.0.1:${port}`;
       const health = await healthy(origin);
       assert.equal(health.version, expectedVersion);
-      if (mode === "proxy") {
+      if (!usingSuppliedImage && mode === "proxy") {
         console.log(
-          `PASS default build health version ${packageVersion} without VERSION build arg`,
+          `PASS default build health version ${expectedVersion} without VERSION build arg`,
         );
       }
       assert.equal(health.initialized, false);
@@ -218,7 +246,11 @@ async function main(): Promise<void> {
       await remove("container", server);
       console.log(`PASS ${mode} smoke and SIGTERM shutdown`);
     }
-    console.log(`PASS both upload modes; retained image ${image}`);
+    console.log(
+      usingSuppliedImage
+        ? `PASS both upload modes; supplied image ${suppliedImage} retained`
+        : `PASS both upload modes; retained image ${image}`,
+    );
     assert(size > 0 && size <= 300_000_000, `Image exceeds 300 MB: ${size} bytes`);
     console.log("PASS image size limit");
   } finally {
