@@ -556,7 +556,7 @@ Pair, Confirm, Onboarding, Home (history and composer), Devices (list, rename, r
 * Project `pneumo`, with a Bucket `pneumo-files` in the region closest to the owner.
 * Service `pneumo`, built from the GitHub mirror's Dockerfile (Railway can't deploy from Tangled). The mirror's `main` moves only on releases, so production redeploys only on releases.
 * Variables per §12.3, using bucket references. Healthcheck `/api/health`. Replicas 1. A public domain.
-* Railway deploy settings are applied through Infrastructure as Code by the lead and set in the template, not read from `railway.json`; see [ADR 0001](adr/0001-railway-deploy-config.md).
+* Railway deploy settings are applied by the lead through the Railway API and set in the template, not read from `railway.json`; see [ADR 0001](adr/0001-railway-deploy-config.md) and [ADR 0004](adr/0004-railway-staging-verification.md).
 * A `staging` environment, which gets its own bucket instance, is used for smoke and deploy-overlap tests, so the production instance stays uninitialized until the owner sets it up.
 
 ### 16.4 Tangled, CI and the GitHub mirror

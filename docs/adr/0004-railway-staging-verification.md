@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-11-01
 - **Issue:** ENG-271
-- **Spec:** `docs/SPEC.md` §18.1, §18.2; [ADR 0001](0001-railway-deploy-config.md)
+- **Spec:** `docs/SPEC.md` §16.3, §18.1, §18.2; [ADR 0001](0001-railway-deploy-config.md)
 
 ## Context
 
