@@ -282,6 +282,7 @@ private fun checkedStoredCiphertextSize(item: StoredUploadItem) {
 internal class UploadForeground(private val context: Context, workerHash: Int) {
     private val manager = context.getSystemService(NotificationManager::class.java)
     private val notificationId = (workerHash and NOTIFICATION_ID_MASK) + NOTIFICATION_ID_OFFSET
+    private val notificationProgress = TransferProgressThrottle()
 
     init {
         manager.createNotificationChannel(
@@ -304,6 +305,7 @@ internal class UploadForeground(private val context: Context, workerHash: Int) {
         ) {
             return
         }
+        if (!notificationProgress.shouldNotify(percent)) return
         try {
             manager.notify(notificationId, notification(percent))
         } catch (_: SecurityException) {

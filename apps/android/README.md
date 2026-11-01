@@ -497,16 +497,26 @@ Intents already supplies AndroidX Test Rules 1.7.0 for `GrantPermissionRule`.
 The two scoped `UseTomlInstead` suppressions preserve the issue's explicit
 restriction against editing the shared version catalog.
 
-**ENG-268 acceptance blocker:** the real 1 MiB download passes MediaStore
-size/SHA-256 verification, but the completed notification retains no Open/Share
-actions. Android logs `Package enqueue rate ... Shedding` while
-`DownloadWorker` calls `setForegroundAsync` for each progress update. Notification
-rate limiting is the suspected cause; the smoke keeps the failure rather than
-raising Android's limit, slowing the fixture, or replacing production behavior.
-The assertion is reported after the independent send-back and forced-Doze checks,
-which both passed. The requested two consecutive passing runs cannot be claimed
-until the production download-notification path is fixed; production edits are
-outside this issue's allowed scope.
+**ENG-268 transfer-notification regression:** this smoke found an ENG-266 bug:
+the 1 MiB download generated 103 foreground dispatches in 1.148 seconds (101 in
+one wall-clock second), and Android shed notification enqueues. The final
+Open/Share replacement was lost even though the downloaded bytes were correct.
+The tagged downloading and terminal posts can each also enqueue a group summary.
+
+Uploads and downloads now use `TransferProgressThrottle`: progress notifications
+require a changed whole percentage and at least 500 ms since the previous
+progress notification. Initial foreground notifications and terminal download
+complete/failure/tamper posts bypass this gate. WorkManager's persisted progress,
+notification ids/tags, and the existing group-summary rules are unchanged. There
+are no deferred notification tasks that can overwrite a terminal state.
+
+JVM tests cover the throttle boundary, repeated percentages, and terminal actions
+after a fast 1 MiB download, tampering, and non-retryable HTTP failure. The exact
+two-run managed-device Verify chain passes with the original Open/Share assertion
+and zero credential matches in each run. The measured post-fix 1 MiB transfer had
+only two initial foreground dispatches, retained all 102 progress-data updates,
+and logged no enqueue-rate shedding. No Android rate-limit setting or fixture
+speed was changed.
 
 ### Earlier regular-emulator acceptance
 

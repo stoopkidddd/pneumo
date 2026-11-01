@@ -121,6 +121,7 @@ class DownloadWorkerTest {
         assertTrue(metadataRequest.getHeader("Authorization")?.startsWith("Bearer ") == true)
         assertNull(directRequest.getHeader("Authorization"))
         assertEquals("/direct-download", directRequest.path)
+        assertTerminalNotification(listOf("Open", "Share"))
     }
 
     @Test
@@ -138,6 +139,7 @@ class DownloadWorkerTest {
         assertTrue(destinations.last.bytes.size() > 0)
         assertTrue(destinations.last.deleted)
         assertFalse(destinations.last.completed)
+        assertTerminalNotification(listOf("Download"))
     }
 
     @Test
@@ -172,6 +174,18 @@ class DownloadWorkerTest {
     }
 
     @Test
+    fun nonRetryableMetadataFailurePostsTheTerminalDownloadAction() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403))
+        initialize(push(1, FileCrypto.ciphertextSize(1)))
+
+        val info = runWorker()
+
+        assertEquals(WorkInfo.State.FAILED, info.state)
+        assertEquals(DownloadWorker.DOWNLOAD_FAILED, info.outputData.getString(DownloadWorker.OUTPUT_ERROR))
+        assertTerminalNotification(listOf("Download"))
+    }
+
+    @Test
     fun initiatingDeviceMismatchFailsBeforeMetadataOrContentRequest() = runTest {
         initialize(
             push(1, FileCrypto.ciphertextSize(1)),
@@ -184,6 +198,13 @@ class DownloadWorkerTest {
         assertEquals(DownloadWorker.SESSION_CHANGED, info.outputData.getString(DownloadWorker.OUTPUT_ERROR))
         assertEquals(0, server.requestCount)
         assertTrue(destinations.created.isEmpty())
+    }
+
+    private fun assertTerminalNotification(actions: List<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val status = manager.activeNotifications.single { it.tag == PUSH_ID }
+        assertEquals(PUSH_ID.hashCode(), status.id)
+        assertEquals(actions, status.notification.actions.map { it.title.toString() })
     }
 
     private fun initialize(stored: DecryptedPush, sessionDeviceId: String = SESSION_DEVICE_ID) {

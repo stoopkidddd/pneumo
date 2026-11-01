@@ -234,13 +234,16 @@ class DownloadWorker internal constructor(
         fileKey: ByteArray,
         notifications: DownloadNotifications
     ) = withContext(Dispatchers.IO) {
+        val notificationProgress = TransferProgressThrottle()
         val input = ProgressNetworkInputStream(
             response.byteStream(),
             spec.ciphertextSize,
             currentCoroutineContext()[Job]
         ) { progress ->
             setProgressAsync(workDataOf(PROGRESS to progress))
-            setForegroundAsync(notifications.foreground(progress))
+            if (notificationProgress.shouldNotify(progress)) {
+                setForegroundAsync(notifications.foreground(progress))
+            }
         }
         openDestination(target).use {
             FileCrypto.decrypt(input, it, fileKey, spec.fileId)
