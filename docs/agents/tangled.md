@@ -22,6 +22,8 @@ git ls-remote origin
 The first `git push -u origin main` confirmed write access on 2026-10-31.
 Only `mise run release` pushes to `github`, and only `main` plus release tags.
 
+The mirror `github.com/stoopkidddd/pneumo` was created on 2026-11-01 (ENG-269): public, with issues, wiki and projects off, and the topics `self-hosted`, `pushbullet-alternative`, `e2e-encryption`, `android` and `pwa`. GitHub can't turn pull requests off, so `.github/PULL_REQUEST_TEMPLATE.md` points contributors to Tangled. The lead seeded its `main` once, from Tangled `main`, so Railway has a source. Add the remote on a fresh clone with `git remote add github git@github.com:stoopkidddd/pneumo.git`.
+
 ## tang does not work with this repo
 
 `tang` 0.0.3 cannot resolve this repo:
