@@ -259,7 +259,7 @@ async function main(): Promise<void> {
     ["log", "--format=- %s (%h)", previous ? `v${previous.text}..HEAD` : "HEAD"],
     { capture: true },
   );
-  const notes = `## Changes\n${changes}\n\n## Install\nDownload ${name} and SHA256SUMS into one directory. Run \`shasum -a 256 -c SHA256SUMS\`, then install with \`adb install -r ${name}\` (or open the APK on Android and allow installation from that source).\n\nRelease candidates and final releases of the same version share versionCode ${code}; see docs/RELEASING.md for the uninstall requirement.\n\nContainer: \`docker pull ${image}\` (linux/amd64, linux/arm64).\n`;
+  const notes = `## Changes\n${changes}\n\n## Install\nDownload ${name} and SHA256SUMS into one directory. Run \`shasum -a 256 -c SHA256SUMS\`, then install with \`adb install -r ${name}\` (or open the APK on Android and allow installation from that source).\n\nRelease candidates and final releases of the same core version share versionCode ${code} and update in place with data kept when signed by the same certificate; see docs/RELEASING.md for lower-code and certificate-change requirements.\n\nContainer: \`docker pull ${image}\` (linux/amd64, linux/arm64).\n`;
   const tag = ["tag", "-a", `v${input}`, "-m", `Pneumo ${input}`];
   const originPush = ["push", "origin", `refs/tags/v${input}`];
   const mirrorPush = ["push", "github", "refs/heads/main:refs/heads/main", `refs/tags/v${input}`];

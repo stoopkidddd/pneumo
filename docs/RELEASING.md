@@ -143,11 +143,13 @@ codes with this formula. Without the properties, Gradle keeps dev defaults
 `versionName = "0.0.1"`, `versionCode = 1`. With none of the signing variables,
 `assembleRelease` remains unsigned; partial signing configuration fails.
 
-`0.1.0-rc.1` and `0.1.0` both have code **100** (as does `0.1.0-rc.2`). Android
-requires a strictly higher code for an update: do not promise an in-place update
-from RC to final of the same core version. Uninstall/reinstall and pair again,
-or wait for a later core version with a higher code. Uninstalling loses local
-app data. There is no separate RC numbering scheme.
+`0.1.0-rc.1` and `0.1.0` both have code **100** (as does `0.1.0-rc.2`). With the
+same signing certificate, an equal-code APK installs as an update with data kept
+through `adb install -r` or the system installer. RC-to-final updates do not
+require uninstalling. The strictly-higher-code rule applies to Google Play
+uploads, not sideloading. Uninstalling first is needed only for a lower code or
+a different signing certificate; it loses local app data and requires pairing
+again. There is no separate RC numbering scheme.
 
 ## Verify a published image and APK
 
