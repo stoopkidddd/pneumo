@@ -562,7 +562,7 @@ Pair, Confirm, Onboarding, Home (history and composer), Devices (list, rename, r
 ### 16.4 Tangled, CI and the GitHub mirror
 
 * **Repo:** `tangled.org/demi.dev/pneumo`, remote `demi.dev@tangled.org:did:plc:qzsds2tco6vi45xxqy4uk5cx` (served by the knot `knot1.tangled.sh`). All changes reach `main` through pull requests, except the two M0 bootstrap issues.
-* **CI** (Tangled hosted spindle): workflows in `.tangled/workflows/*.yml`, triggered on `push` to `main` and on `pull_request` to `main`. Lane checks run in CI. e2e lanes run in CI only where the hosted spindle's engines and time limits allow (for example the `microvm` engine for Docker). `docs/agents/tangled.md` lists what is local-only.
+* **CI** (our own spindle `spindle.demi.dev`, see [ADR 0005](adr/0005-ci-on-our-own-spindle.md); Tangled's hosted spindle until 2026-11-01): workflows in `.tangled/workflows/*.yml`, triggered on `push` to `main` and on `pull_request` to `main`. Lane checks run in CI. e2e lanes run in CI only where the spindle's engines and time limits allow. `docs/agents/tangled.md` lists what is local-only.
 * **GitHub mirror:** `github.com/stoopkidddd/pneumo`, public and read-only (issues, PRs and wiki off; the README says contributions go to Tangled). `mise run release` pushes `main` and the release tag to it, so its `main` always equals the latest release.
 * **Release** (`mise run release <version>`, run on the owner's Mac):
   * build and push `ghcr.io/stoopkidddd/pneumo:{version,latest}` for linux/amd64 and arm64 (no `latest` for `-rc` versions);
