@@ -384,11 +384,19 @@ and lint/JUnit reports stay under `build/`.
 
 ## Managed-device smoke test
 
-`e2e:android` runs `pixel6Api34DebugAndroidTest`: Pixel 6, API 34, `aosp-atd`,
-with no Google Play Services dependency. Gradle downloads the matching system
-image and creates/boots/stops the device. Hardware virtualization must be
-available. Run only one Android emulator/managed-device suite at a time on this
-Mac. Tests cover initial Pair, valid and invalid deep-link routing, selected
+`mise run e2e:android` calls `scripts/e2e/android.ts`, which builds the server,
+starts isolated MinIO and server instances on random host ports, then runs
+`pixel6Api34DebugAndroidTest`: Pixel 6, API 34, `aosp-atd`, with no Google Play
+Services dependency. Uploads use proxy mode so the emulator never needs to reach
+MinIO's host-only endpoint. `PUBLIC_URL` uses `10.0.2.2`; startup waits for the
+structured `Server listening` event and health response. The MinIO helper supports
+Docker or `PNEUMO_E2E_MINIO=native` with `minio`/`mc` on PATH.
+
+Gradle downloads the matching system image and creates/boots/stops the device.
+Hardware virtualization must be available. Stop other emulators first and run only
+one managed-device suite at a time on this Mac. The existing 14 tests remain
+independent of the real-server harness. They cover initial Pair, valid and invalid
+deep-link routing, selected
 Settings-tab restoration, cold/warm notification navigation, and the denied
 notification permission state. The SecureStore smoke uses the real Android
 Keystore, including reopening the wrapper and clearing both credentials.
@@ -432,7 +440,76 @@ and cursor recovery across the DataStore/Room write boundary. Boot/service
 Robolectric tests cover paired/unpaired restoration and the silent
 minimum-importance channel.
 
-There is no Android/server managed-device harness yet. ENG-259's local-server
+### Real-server flow and coordination
+
+`RealServerSmokeTest` adds one ordered server-backed case:
+
+1. Deliver the real `pneumo://pair` VIEW intent, confirm the host, pair, grant
+   notifications with `GrantPermissionRule`, and skip the battery exemption.
+2. Wait for Settings to show Connected.
+3. Send an encrypted note with the sender session's production `ApiClient` and
+   crypto, invoke notification Copy, and read the exact clipboard text from the
+   foreground `MainActivity`. No debug-only clipboard probe is used.
+4. Send a link, verify Open/Copy, and intercept the forwarded browsable
+   `ACTION_VIEW` URL with Espresso Intents; ATD has no browser.
+5. Send a random 1 MiB encrypted file, invoke Download, compare MediaStore length
+   and SHA-256, and require the same tagged notification to expose Open/Share.
+6. Type and send a Home-composer note. Before clicking Send, the test calls the
+   harness's `/send-back-ready` endpoint. The harness starts
+   `pnpm --silent dev-client wait-for` and waits until that CLI device is online
+   in `GET /api/devices`, proving its hello was authenticated before Send.
+   `/send-back-received` checks the waiter's exit code, body, type, and source.
+   This HTTP handshake avoids ENG-275's live-only waiter race without changing
+   the dev client.
+7. Press Home. The harness enables deep idle (disabled by default on ATD),
+   unplugs the simulated battery, forces Doze and verifies `get deep` is `IDLE`,
+   sends a note with the dev client's production `Client`, then unforces idle,
+   resets the battery, and wakes the device. The test requires its notification
+   within 30 seconds.
+
+The test attempts `UiDevice.openNotification()` and package-scoped SystemUI title
+and action selectors. This ATD has no interactive notification shade: the exercised
+alternative invokes the real posted action's `PendingIntent`, selected by push tag,
+title, and action. Progress reports explicitly distinguish shade clicks from
+`ATD PendingIntent` actions. Selectors must not match Home's identical text.
+
+Only the non-secret `pneumoHarness` coordinator URL goes through a Gradle
+`-Pandroid.testInstrumentationRunnerArguments.*` argument. The harness creates
+temporary mode-0600 CLI sessions, captures `pair-uri` privately, and sends the
+pair URI and sender session over adb stdin into an atomic, mode-0600 app-private
+`files/pneumo-e2e.json`. The test consumes/deletes that file. It delivers the
+pairing VIEW through `Instrumentation.callActivityOnNewIntent` after launching
+MainActivity, avoiding credential-bearing ActivityTaskManager launch diagnostics.
+The existing fake-link tests retain cold-launch routing coverage.
+
+Gradle/server output, captured logcat, instrumentation XML/logcat, and test reports
+are scanned for the live pairing URIs, tokens, MK, setup token, and passphrase.
+Credential matches fail the run and are redacted from the ignored
+`apps/android/build/e2e/last-run.log`. Expected private `pair-uri` stdout is not
+included in diagnostic output. Teardown stops the owned processes/device and
+MinIO, restores Doze/battery state, and removes temporary sessions; Gradle's
+concurrent device shutdown is treated as an already-completed teardown.
+
+Running `./gradlew pixel6Api34DebugAndroidTest` without harness arguments skips
+only the new real-server case. Test-only dependencies are pinned directly in
+`app/build.gradle.kts`: UiAutomator 2.3.0, Espresso Intents 3.7.0, and AndroidX Test
+Rules 1.7.0. The three scoped `UseTomlInstead` suppressions preserve the issue's
+explicit restriction against editing the shared version catalog.
+
+**ENG-268 acceptance blocker:** the real 1 MiB download passes MediaStore
+size/SHA-256 verification, but the completed notification retains no Open/Share
+actions. Android logs `Package enqueue rate ... Shedding` while
+`DownloadWorker` calls `setForegroundAsync` for each progress update. Notification
+rate limiting is the suspected cause; the smoke keeps the failure rather than
+raising Android's limit, slowing the fixture, or replacing production behavior.
+The assertion is reported after the independent send-back and forced-Doze checks,
+which both passed. The requested two consecutive passing runs cannot be claimed
+until the production download-notification path is fixed; production edits are
+outside this issue's allowed scope.
+
+### Earlier regular-emulator acceptance
+
+ENG-259's local-server
 check used a regular API 34 emulator, deep-link pairing, and the onboarding battery
 exemption. Settings reached Connected; package replacement restored the socket.
 During ten minutes of screen-off forced Doze, all ten one-minute samples remained

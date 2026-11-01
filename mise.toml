@@ -51,9 +51,8 @@ description = "Check Android formatting, analysis, lint, JVM tests and screensho
 run = "bash scripts/ci/check.sh android"
 
 [tasks."e2e:android"]
-description = "Run the Pixel 6 API 34 managed-device smoke test"
-dir = "apps/android"
-run = "./gradlew pixel6Api34DebugAndroidTest"
+description = "Run all managed-device smokes against an isolated real server and MinIO"
+run = "pnpm exec tsx scripts/e2e/android.ts"
 
 [tasks."brand:export"]
 description = "Export deterministic brand assets and design tokens"

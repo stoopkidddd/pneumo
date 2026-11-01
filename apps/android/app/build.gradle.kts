@@ -145,4 +145,11 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.compose.ui.test.junit4)
+    // ENG-268 keeps these exact test-only pins here without changing the shared catalog.
+    //noinspection UseTomlInstead
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    //noinspection UseTomlInstead
+    androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
+    //noinspection UseTomlInstead
+    androidTestImplementation("androidx.test:rules:1.7.0")
 }
