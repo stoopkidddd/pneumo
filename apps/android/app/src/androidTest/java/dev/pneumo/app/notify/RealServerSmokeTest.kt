@@ -62,6 +62,8 @@ import org.hamcrest.Matchers.allOf
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -328,7 +330,39 @@ class RealServerSmokeTest {
             // Retain this failure, but also exercise the independent send-back and Doze checks.
             activeCoordinator.stage("file notification missing Open Share")
         }
-        return notification(pushId)?.notification?.actions?.map { it.title.toString() }.orEmpty()
+        val actions = notification(pushId)?.notification?.actions?.map { it.title.toString() }.orEmpty()
+        if (actions == listOf(OPEN, SHARE)) {
+            exerciseFileShare(pushId, done.uri)
+            focusMainActivity(scenario)
+            activeCoordinator.stage("file notification Share chooser verified")
+        }
+        return actions
+    }
+
+    private fun exerciseFileShare(pushId: String, uri: Uri) {
+        Intents.init()
+        try {
+            intending(hasAction(Intent.ACTION_CHOOSER))
+                .respondWith(ActivityResult(Activity.RESULT_OK, null))
+            performNotificationAction(pushId, FILE_NAME, SHARE)
+            compose.waitUntil(UI_TIMEOUT_MS) {
+                Intents.getIntents().any { it.action == Intent.ACTION_CHOOSER }
+            }
+            intended(hasAction(Intent.ACTION_CHOOSER))
+            val chooser = Intents.getIntents().single { it.action == Intent.ACTION_CHOOSER }
+            assertNull(chooser.data)
+            assertNotNull(chooser.resolveActivity(context.packageManager))
+            assertTrue(chooser.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+            val send = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                ?: throw AssertionError("Missing file Share target")
+            assertEquals(Intent.ACTION_SEND, send.action)
+            assertEquals(FILE_MIME, send.type)
+            assertEquals(uri, send.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
+            assertEquals(uri, send.clipData?.getItemAt(0)?.uri)
+            assertTrue(send.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        } finally {
+            Intents.release()
+        }
     }
 
     private fun assertDownloadedFile(uri: Uri, expectedDigest: ByteArray) {

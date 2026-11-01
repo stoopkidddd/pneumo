@@ -10,6 +10,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import dev.pneumo.app.notify.DownloadOpenActivity
+import dev.pneumo.app.notify.DownloadShareActivity
 import dev.pneumo.app.notify.NotificationIntents
 import java.util.Locale
 
@@ -37,7 +38,9 @@ object DownloadActions {
         PendingIntent.getActivity(
             context,
             0,
-            shareIntent(context, uri, mime).setData(identity("share", uri)),
+            Intent(Intent.ACTION_SEND, uri, context, DownloadShareActivity::class.java)
+                .setDataAndType(uri, fileMime(context, uri, mime))
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -78,11 +81,4 @@ object DownloadActions {
     }
 
     private const val DEFAULT_MIME = "application/octet-stream"
-
-    private fun identity(action: String, uri: Uri): Uri = Uri.Builder()
-        .scheme("pneumo")
-        .authority("download")
-        .appendPath(action)
-        .appendQueryParameter("uri", uri.toString())
-        .build()
 }

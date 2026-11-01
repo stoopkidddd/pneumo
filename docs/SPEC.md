@@ -459,6 +459,8 @@ On SIGTERM: stop accepting connections, close sockets with 1012, wait up to 10 s
 
 `INTERNET`, `ACCESS_NETWORK_STATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_REMOTE_MESSAGING`, `FOREGROUND_SERVICE_DATA_SYNC` (required on API 34+ for foreground file uploads/downloads), `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `CAMERA`.
 
+Library manifests additionally merge only `android.permission.WAKE_LOCK` (from `androidx.work:work-runtime`) and the signature-level `dev.pneumo.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (from `androidx.core`) into the app.
+
 ### 14.3 Pairing and onboarding
 
 1. First launch shows "Pair with your Pneumo server": scan a QR code, open a `pneumo://pair` deep link, or paste the URI.

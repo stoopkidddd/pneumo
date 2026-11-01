@@ -208,7 +208,11 @@ Download sends `dev.pneumo.app.notify.DOWNLOAD` to `DownloadRequestedReceiver`
 with the `pushId` extra and enqueues `DownloadWorker` for the initiating session.
 Completion replaces the same tagged child through `PushNotificationGroup.post`,
 with Open and Share actions. Open cancels only that child before forwarding a
-read-granted content URI; Share opens the system chooser. Body taps still pass
+read-granted content URI; Share uses the non-exported, no-display
+`DownloadShareActivity` to launch the system chooser and finish without cancelling
+the child. Its immutable PendingIntent carries per-file URI/MIME identity, leaving
+the chooser's data unset so it resolves and older notifications share their own file.
+JVM regressions exercise separate Share targets on API 26 and 34. Body taps still pass
 `pushId` through MainActivity, navigation and `ShellUiState`, selecting Home without
 replaying the tab selection on recreation. Home fetches a missing target, scrolls
 to it, and marks it selected.
@@ -454,6 +458,8 @@ minimum-importance channel.
    `ACTION_VIEW` URL with Espresso Intents; ATD has no browser.
 5. Send a random 1 MiB encrypted file, invoke Download, compare MediaStore length
    and SHA-256, and require the same tagged notification to expose Open/Share.
+   Invoke its real Share PendingIntent and verify a resolvable, data-free chooser
+   with that file's stream URI, MIME type, clip data, and read grant.
 6. Type and send a Home-composer note. Before clicking Send, the test calls the
    harness's `/send-back-ready` endpoint. The harness starts
    `pnpm --silent dev-client wait-for` and waits until that CLI device is online
